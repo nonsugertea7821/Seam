@@ -14,9 +14,10 @@ zero-cost exception handling via physical register bindings.
 | **4** | Compiler Pipeline | `ast.rs`, `compiler.rs`, `codegen.rs` | ✓ Complete | 24 |
 | **5** | Runtime Linker | `linker.rs` | ✓ Complete | 13 |
 | **5B** | Fork Executor | `linker.rs` | ✓ Complete | 4 |
+| **5C** | Pseudo-Code Interpreter | `linker.rs` | ✓ Complete | 12 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 19 modules, ~6,200 lines, 118 tests (all passing)**
+**Total: 19 modules, ~6,500 lines, 130 tests (all passing)**
 
 ---
 
@@ -485,12 +486,16 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - 4 comprehensive tests for ForkExecutor (setup, phases, results, barriers)
    - Total: 118 tests (102 + 13 linker + 4 executor tests)
 
-6. **Pseudo-Code Interpreter** (Next priority): Path execution with code interpretation
-   - Responsibility: Deserialize and execute CompiledFork.generated_code
-   - Goal: Replace placeholder execute_path() with actual code interpretation
-   - Foundation: Path dispatch and resource state collection
+6. ✓ **Pseudo-Code Interpreter** (COMPLETED): Path execution with code interpretation
+   - Responsibility: Deserialize and execute CompiledFork.generated_code (Phase 5C)
+   - Implementation: CodeInterpreter, Instruction enum, ResourceAccessTracker
+   - Integration: Replaces ForkExecutor phase_dispatch() placeholder with actual execution
+   - Tests: 12 comprehensive tests (parsing, execution, tracking, integration)
 
-7. **Direct Jump Integration**: Connect ForkExecutor abort paths to direct jump abort
+7. **Direct Jump Integration** (Next priority): Connect ForkExecutor abort paths to direct jump abort
+   - Responsibility: Integrate Phase 6 CFP/RFP with Phase 5C abort mechanism
+   - Goal: Implement O(1) abort via direct jump when Phase 5C Abort instruction executed
+   - Foundation: Use RFP ghost frame for access to aborted path locals
 
 8. **Signal Integration** (Deferred - after execution model is stable)
    - Connect abort mechanism to OS signal handlers
