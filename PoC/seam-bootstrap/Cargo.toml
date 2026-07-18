@@ -1,0 +1,20 @@
+[package]
+name = "seam-bootstrap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2"
+cfg-if = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[[bin]]
+name = "seam-vm"
+path = "src/main.rs"
+
+[lib]
+name = "seam_bootstrap"
+path = "src/lib.rs"

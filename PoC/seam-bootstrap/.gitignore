@@ -1,0 +1,28 @@
+# Cargo build artifacts
+/target/
+**/*.rlib
+**/*.rmeta
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+.directory
+
+# Debug
+*.pdb
+*.stackdump
+
+# Generated
+*.o
+*.a
+*.so
+*.dylib
+*.dll
