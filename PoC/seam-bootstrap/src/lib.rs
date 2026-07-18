@@ -28,6 +28,7 @@ pub mod sarm;
 pub mod gac;
 pub mod direct_jump;
 pub mod signal_handler;
+pub mod debugger;
 
 #[cfg(target_arch = "x86_64")]
 pub mod arch {
@@ -59,6 +60,7 @@ pub use linker::{RuntimeLinker, LinkedFork, PathState, PathResult, ForkExecutor,
 pub use cfp_rfp::{PhysicalRegisters, HybridContextSwitch};
 pub use shadow_arena::{ShadowBuffer as ShadowBufferArena, ShadowArena};
 pub use signal_handler::{SignalHandler, SignalAbortTarget};
+pub use debugger::{DebuggerContext, Breakpoint, BreakpointLocation, BreakpointCondition, GhostFrameSnapshot};
 pub use sarm::{SARMEntry, SARMTable};
 pub use gac::LoopFrame;
 pub use direct_jump::{DirectJumpTarget, CollectBindingTable};

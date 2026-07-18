@@ -17,9 +17,10 @@ zero-cost exception handling via physical register bindings.
 | **5C** | Pseudo-Code Interpreter | `linker.rs` | ✓ Complete | 12 |
 | **7** | Direct Jump Integration | `linker.rs` | ✓ Complete | 7 |
 | **8** | Signal Integration | `signal_handler.rs`, `context.rs` | ✓ Complete | 7 |
+| **9** | Debugger Integration | `debugger.rs`, `context.rs` | ✓ Complete | 17 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 20 modules, ~7,500 lines, 144 tests (all passing)**
+**Total: 21 modules, ~8,000 lines, 161 tests (all passing)**
 
 ---
 
@@ -522,10 +523,17 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Total: 144 tests (137 + 7 new Phase 8 tests)
    - Zero-overhead signal integration: no allocation, no DWARF tables in signal handler
 
-9. **Debugger Integration** (Next priority): Break-on-abort support for debugging
-   - Responsibility: Enable debugger inspection of ghost frame during abort
-   - Goal: Allow stepping through collector execution with full state visibility
-   - Foundation: Integrate with existing CFP/RFP inspection and breakpoint framework
+9. ✓ **Debugger Integration** (COMPLETED): Break-on-abort support for debugging
+   - Implemented BreakpointCondition enum: Unconditional, AbortedResource(u32), HitCount(usize)
+   - Implemented BreakpointLocation enum: OnAbort, OnCollectorEntry, OnGhostFrameAccess
+   - Implemented GhostFrameSnapshot struct: captures RFP, CFP, resource_id, phase at abort
+   - Implemented DebuggerContext with BTreeMap<u32, Breakpoint> for O(log n) lookup
+   - Integrated with ExecutionContext: debugger field, record_ghost_frame(), should_break_on_abort()
+   - Modified abort() method to record ghost frame and check breakpoints
+   - Zero-cost when disabled: no overhead in execution path
+   - 17 comprehensive tests: breakpoint creation, conditions, hit counts, ghost frames, context
+   - Total: 161 tests (144 + 17 new Phase 9 tests)
+   - Full visibility into abort paths: conditional breaks, ghost frame inspection
 
 ---
 

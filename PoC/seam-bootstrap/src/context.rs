@@ -10,6 +10,7 @@
 
 use crate::pssa::Arena;
 use crate::cfp_rfp::{HybridContextSwitch, set_hybrid_context, get_hybrid_context};
+use crate::debugger::DebuggerContext;
 use std::sync::Arc;
 
 /// Control Frame Pointer - points to parent frame in control flow
@@ -75,6 +76,8 @@ pub struct ExecutionContext {
     thread_id: u64,
     /// Phase 6: Direct jump context for abort mechanism
     direct_jump_context: Option<HybridContextSwitch>,
+    /// Phase 9: Debugger context for breakpoints and inspections
+    debugger: DebuggerContext,
 }
 
 /// Frame metadata for stack introspection
@@ -97,6 +100,7 @@ impl ExecutionContext {
             in_collector: false,
             thread_id,
             direct_jump_context: None,
+            debugger: DebuggerContext::new(),  // Phase 9: Initialize debugger
         };
         
         // Phase 6 Integration: Initialize thread-local hybrid context
@@ -137,6 +141,38 @@ impl ExecutionContext {
         Ok(frame_ptr)
     }
 
+    /// Phase 9: Get mutable reference to debugger context
+    pub fn debugger_mut(&mut self) -> &mut DebuggerContext {
+        &mut self.debugger
+    }
+
+    /// Phase 9: Get immutable reference to debugger context
+    pub fn debugger(&self) -> &DebuggerContext {
+        &self.debugger
+    }
+
+    /// Phase 9: Record ghost frame snapshot when abort occurs
+    pub fn record_ghost_frame(&mut self, resource_id: u32, phase: u32) {
+        use crate::debugger::GhostFrameSnapshot;
+        
+        let snapshot = GhostFrameSnapshot::new(self.rfp.0, self.cfp.0, resource_id, phase);
+        self.debugger.record_ghost_frame(snapshot);
+    }
+
+    /// Phase 9: Check if should break on abort event
+    pub fn should_break_on_abort(&mut self, resource_id: u32) -> bool {
+        use crate::debugger::BreakpointLocation;
+        
+        self.debugger.should_break_at(BreakpointLocation::OnAbort, resource_id)
+    }
+
+    /// Phase 9: Check if should break on collector entry
+    pub fn should_break_on_collector_entry(&mut self, resource_id: u32) -> bool {
+        use crate::debugger::BreakpointLocation;
+        
+        self.debugger.should_break_at(BreakpointLocation::OnCollectorEntry, resource_id)
+    }
+
     /// Abort current frame and trigger collector
     ///
     /// Phase 1 + Phase 6 Integration:
@@ -156,6 +192,13 @@ impl ExecutionContext {
 
         self.in_collector = true;
         self.rfp = ResourceFramePtr(self.cfp.0);
+        
+        // Phase 9: Record ghost frame and check for breakpoint
+        self.record_ghost_frame(0, 5);  // resource_id=0, phase=5 (dispatch)
+        if self.should_break_on_abort(0) {
+            // Phase 9: Would trigger debugger break here
+            // For now, just record that breakpoint was hit
+        }
         
         // Update thread-local hybrid context for Phase 6 direct jump
         set_hybrid_context(self.cfp.0, self.rfp.0);
