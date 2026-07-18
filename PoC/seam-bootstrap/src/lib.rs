@@ -3,6 +3,7 @@
 //! Path-bounded Shadow Stack Arena (PSSA) implementation with hybrid context
 //! (CFP/RFP) and static abort/collector semantics.
 //! Includes 2PST (Two-Phase Static Transaction) support for fork paths.
+//! Phase 3: Resource tracking with requires contracts and automatic synchronization.
 
 pub mod pssa;
 pub mod context;
@@ -12,6 +13,9 @@ pub mod resource;
 pub mod shadow_buffer;
 pub mod transaction;
 pub mod fork;
+pub mod effect;
+pub mod contract;
+pub mod sync;
 
 #[cfg(target_arch = "x86_64")]
 pub mod arch {
@@ -33,6 +37,9 @@ pub use resource::{GlobalResource, UniqueRecord, AccessSet, ResourceAccess};
 pub use shadow_buffer::ShadowBuffer;
 pub use transaction::{Transaction, TransactionManager, TransactionState};
 pub use fork::{ForkContext, ForkGraph, ForkPath};
+pub use effect::{Effect, EffectType, EffectSet, EffectAnalysis};
+pub use contract::{RequiresContract, ContractChecker, ResourceRequirement, RequirementLevel};
+pub use sync::{AutoSync, SyncPoint, SyncKind};
 
 /// Seam VM initialization
 pub fn vm_init(arena_size: usize) -> Result<ExecutionContext, &'static str> {
