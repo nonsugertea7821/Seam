@@ -11,7 +11,6 @@
 use crate::pssa::Arena;
 use crate::cfp_rfp::{HybridContextSwitch, set_hybrid_context, get_hybrid_context};
 use std::sync::Arc;
-use std::cell::RefCell;
 
 /// Control Frame Pointer - points to parent frame in control flow
 #[repr(transparent)]
@@ -63,8 +62,9 @@ pub struct FrameLayout {
 /// - Enables O(1) abort via direct jump (no stack unwinding)
 /// - Tracks frame layout and collector paths
 pub struct ExecutionContext {
-    /// Shared arena for this execution context (wrapped in RefCell for interior mutability)
-    arena: Arc<RefCell<Arena>>,
+    /// Shared arena for this execution context (Arc for safe sharing)
+    /// Note: Arena::arena_ptr uses AtomicUsize for thread-safe allocation
+    arena: Arc<Arena>,
     /// Control Frame Pointer (current execution frame) — physical register rbp/x29
     cfp: ControlFramePtr,
     /// Resource Frame Pointer (aborted frame for cleanup) — physical register r15/x28
@@ -83,7 +83,7 @@ pub type FramePointer = usize;
 impl ExecutionContext {
     /// Initialize a new execution context
     pub fn new(arena_size: usize) -> Result<Self, &'static str> {
-        let arena = Arena::new(arena_size)?;
+        let arena = Arena::new(arena_size)?;  // Arc<Arena>
         // Simple thread ID: hash of thread debug string
         let thread_id = format!("{:?}", std::thread::current().id())
             .as_bytes()
@@ -91,7 +91,7 @@ impl ExecutionContext {
             .fold(0u64, |acc, &b| acc.wrapping_mul(31).wrapping_add(b as u64));
 
         let ctx = ExecutionContext {
-            arena: Arc::new(RefCell::new((*arena).clone())),
+            arena,  // Move the Arc directly, no cloning needed
             cfp: ControlFramePtr::null(),
             rfp: ResourceFramePtr::null(),
             in_collector: false,
@@ -107,24 +107,18 @@ impl ExecutionContext {
 
     /// Push a new frame onto the PSSA
     pub fn frame_push(&mut self, frame_size: usize) -> Result<FramePointer, &'static str> {
-        {
-            let arena_ref = self.arena.borrow();
-            if arena_ref.remaining() < frame_size + std::mem::size_of::<FrameLayout>() {
-                return Err("Insufficient arena space for frame push");
-            }
+        // Check space availability
+        if self.arena.remaining() < frame_size + std::mem::size_of::<FrameLayout>() {
+            return Err("Insufficient arena space for frame push");
         }
 
         // Allocate frame layout metadata
-        let layout_ptr = unsafe {
-            let mut arena_mut = self.arena.borrow_mut();
-            arena_mut.allocate(std::mem::size_of::<FrameLayout>())?
-        } as FramePointer;
+        let layout_ptr = self.arena
+            .allocate(std::mem::size_of::<FrameLayout>())? as FramePointer;
 
         // Allocate frame local storage
-        let frame_ptr = unsafe {
-            let mut arena_mut = self.arena.borrow_mut();
-            arena_mut.allocate(frame_size)?
-        } as FramePointer;
+        let frame_ptr = self.arena
+            .allocate(frame_size)? as FramePointer;
 
         // Initialize frame layout
         unsafe {
@@ -199,8 +193,7 @@ impl ExecutionContext {
     }
 
     /// Get reference to arena
-    #[inline]
-    pub fn arena(&self) -> Arc<RefCell<Arena>> {
+    pub fn arena(&self) -> Arc<Arena> {
         Arc::clone(&self.arena)
     }
     
@@ -243,13 +236,13 @@ impl ExecutionContext {
     /// Get total allocated space
     #[inline]
     pub fn allocated(&self) -> usize {
-        self.arena.borrow().current_ptr()
+        self.arena.current_ptr()
     }
 
     /// Get remaining space
     #[inline]
     pub fn remaining(&self) -> usize {
-        self.arena.borrow().remaining()
+        self.arena.remaining()
     }
     
     /// Phase 6: Check if direct jump context is configured
@@ -264,7 +257,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Skip due to Arc/RefCell interaction (heap corruption in test environment)
     fn test_context_direct_jump_integration() {
         let mut ctx = ExecutionContext::new(8192).unwrap();
         
@@ -291,7 +283,6 @@ mod tests {
     }
     
     #[test]
-    #[ignore] // Disabled due to Arc/RefCell interaction in tests
     fn test_context_creation() {
         let ctx = ExecutionContext::new(4096).expect("Context creation failed");
         assert!(ctx.cfp().is_null());

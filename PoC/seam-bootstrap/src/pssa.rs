@@ -2,9 +2,15 @@
 //!
 //! PSSA is a thread-local contiguous virtual memory region isolated from native OS stack.
 //! Allocation uses bump-allocation strategy with O(1) cost.
+//!
+//! Memory Management:
+//! - Arena::new() allocates memory via std::alloc
+//! - Returned in Arc for thread-safe sharing
+//! - Thread-safe arena_ptr uses atomic operations
+//! - Only ONE deallocation happens when Arc refcount reaches 0
 
 use std::alloc::{alloc, dealloc, Layout};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 use std::cell::RefCell;
 
 /// Arena pointer represents the current allocation frontier in PSSA
@@ -18,28 +24,25 @@ pub struct FrameCheckpoint {
 }
 
 /// Thread-local PSSA (Path-bounded Shadow Stack Arena)
+/// 
+/// Memory Safety:
+/// - base and max_size are immutable after creation
+/// - arena_ptr uses atomic operations for thread-safe bumping
+/// - Only Arc manages the arena lifetime — single deallocation
 pub struct Arena {
-    /// Base address of the arena
+    /// Base address of the arena (immutable after creation)
     base: *mut u8,
-    /// Current allocation pointer (arena_ptr)
-    arena_ptr: ArenaPtr,
-    /// Maximum arena size (static upper bound)
+    /// Current allocation pointer (atomic for thread safety)
+    arena_ptr: AtomicUsize,
+    /// Maximum arena size (static upper bound, immutable)
     max_size: usize,
     /// Active checkpoints for loop frames (GAC)
+    /// Only checkpoints need RefCell for interior mutability
     checkpoints: RefCell<Vec<FrameCheckpoint>>,
 }
 
-// Manual Clone for Arena - creates independent copy
-impl Clone for Arena {
-    fn clone(&self) -> Self {
-        Arena {
-            base: self.base,
-            arena_ptr: self.arena_ptr,
-            max_size: self.max_size,
-            checkpoints: RefCell::new(self.checkpoints.borrow().clone()),
-        }
-    }
-}
+// Arena does NOT implement Clone — always shared via Arc
+// This prevents double-free issues
 
 impl Arena {
     /// Initialize a new PSSA with the given maximum size
@@ -62,7 +65,7 @@ impl Arena {
 
         Ok(Arc::new(Arena {
             base,
-            arena_ptr: 0,
+            arena_ptr: AtomicUsize::new(0),
             max_size,
             checkpoints: RefCell::new(Vec::new()),
         }))
@@ -75,13 +78,25 @@ impl Arena {
     /// Caller must ensure:
     /// - Size does not exceed remaining arena space
     /// - Allocated memory is properly initialized
-    pub unsafe fn allocate(&mut self, size: usize) -> Result<*mut u8, &'static str> {
-        if self.arena_ptr + size > self.max_size {
+    pub fn allocate(&self, size: usize) -> Result<*mut u8, &'static str> {
+        let current = self.arena_ptr.load(Ordering::Acquire);
+        if current + size > self.max_size {
             return Err("Arena overflow: insufficient space for allocation");
         }
 
-        let ptr = self.base.add(self.arena_ptr);
-        self.arena_ptr += size;
+        let ptr = unsafe { self.base.add(current) };
+        let new_ptr = current + size;
+        
+        // Atomic compare-and-swap to ensure thread-safe allocation
+        if self.arena_ptr.compare_exchange(
+            current,
+            new_ptr,
+            Ordering::Release,
+            Ordering::Acquire,
+        ).is_err() {
+            // Retry on conflict (another thread allocated concurrently)
+            return self.allocate(size);
+        }
 
         Ok(ptr)
     }
@@ -89,23 +104,23 @@ impl Arena {
     /// Save current arena pointer as a checkpoint (for loop frames)
     pub fn checkpoint_save(&self) -> FrameCheckpoint {
         FrameCheckpoint {
-            ptr: self.arena_ptr,
+            ptr: self.arena_ptr.load(Ordering::Acquire),
             size: 0, // Will be set on rollback
         }
     }
 
     /// Rollback arena pointer to the given checkpoint (GAC - Generational Arena Checkpoint)
     /// This is critical for loops to prevent arena leaks
-    pub fn checkpoint_rollback(&mut self, checkpoint: FrameCheckpoint) {
+    pub fn checkpoint_rollback(&self, checkpoint: FrameCheckpoint) {
         if checkpoint.ptr <= self.max_size {
-            self.arena_ptr = checkpoint.ptr;
+            self.arena_ptr.store(checkpoint.ptr, Ordering::Release);
         }
     }
 
     /// Get current arena pointer position
     #[inline]
     pub fn current_ptr(&self) -> ArenaPtr {
-        self.arena_ptr
+        self.arena_ptr.load(Ordering::Acquire)
     }
 
     /// Get base address
@@ -123,12 +138,12 @@ impl Arena {
     /// Remaining available space
     #[inline]
     pub fn remaining(&self) -> usize {
-        self.max_size.saturating_sub(self.arena_ptr)
+        self.max_size.saturating_sub(self.arena_ptr.load(Ordering::Acquire))
     }
 
     /// Clear entire arena (use with caution - typically at VM shutdown only)
-    pub fn clear(&mut self) {
-        self.arena_ptr = 0;
+    pub fn clear(&self) {
+        self.arena_ptr.store(0, Ordering::Release);
         self.checkpoints.borrow_mut().clear();
     }
 }
