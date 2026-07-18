@@ -222,7 +222,8 @@ impl ShadowArena {
     /// Returns: Vec<(path_a, path_b, shared_resource_id)>
     pub fn detect_shared_conflicts(&self) -> Vec<(u32, u32, u32)> {
         let shared = self.shared_accesses.borrow();
-        let path_ids: Vec<u32> = shared.keys().cloned().collect();
+        let mut path_ids: Vec<u32> = shared.keys().cloned().collect();
+        path_ids.sort();  // Deterministic ordering for reproducible conflict detection
         let mut conflicts = Vec::new();
 
         for i in 0..path_ids.len() {
