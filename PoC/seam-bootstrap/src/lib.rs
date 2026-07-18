@@ -5,6 +5,7 @@
 //! Includes 2PST (Two-Phase Static Transaction) support for fork paths.
 //! Phase 3: Resource tracking with requires contracts and automatic synchronization.
 //! Phase 4: Compiler integration with AST, parsing, and code generation.
+//! Phase 5: Full Seam language support — parser, type checker, DRAFT syntax.
 
 pub mod pssa;
 pub mod context;
@@ -20,6 +21,9 @@ pub mod sync;
 pub mod ast;
 pub mod compiler;
 pub mod codegen;
+pub mod seam_lang;
+pub mod seam_parser;
+pub mod type_checker;
 
 #[cfg(target_arch = "x86_64")]
 pub mod arch {
@@ -47,6 +51,13 @@ pub use sync::{AutoSync, SyncPoint, SyncKind};
 pub use ast::{ResourceId, AccessType, AccessSpec, RequiresClause, ForkPath as AstForkPath, ForkExpr, CompiledFork};
 pub use compiler::{SeamCompiler, CompileError, CompileResult, CompileAnalysis};
 pub use codegen::{CodeGenerator, GeneratedCode};
+pub use seam_lang::{
+    SeamPrimitive, SeamType, FieldDef, RecordDef, ResourceDef,
+    ResourceFieldAccess, RequiresBlock, SeamExpr, SeamStmt, ForkPathStmt,
+    ParamDef, EntryDef, CollectorDef, ChannelDef, SeamItem, SeamProgram,
+};
+pub use seam_parser::{Lexer, SeamParser, ParseError, ParseResult, parse_seam};
+pub use type_checker::{TypeError, ItemKind, TypeEnvironment, TypeCheckResult, TypeChecker, check_seam};
 
 /// Seam VM initialization
 pub fn vm_init(arena_size: usize) -> Result<ExecutionContext, &'static str> {
