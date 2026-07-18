@@ -16,9 +16,10 @@ zero-cost exception handling via physical register bindings.
 | **5B** | Fork Executor | `linker.rs` | ✓ Complete | 4 |
 | **5C** | Pseudo-Code Interpreter | `linker.rs` | ✓ Complete | 12 |
 | **7** | Direct Jump Integration | `linker.rs` | ✓ Complete | 7 |
+| **8** | Signal Integration | `signal_handler.rs`, `context.rs` | ✓ Complete | 7 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 19 modules, ~7,000 lines, 137 tests (all passing)**
+**Total: 20 modules, ~7,500 lines, 144 tests (all passing)**
 
 ---
 
@@ -508,10 +509,23 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Total: 137 tests (130 + 7 new Phase 7 tests)
    - Zero-cost exception handling: O(1) abort without stack unwinding
 
-8. **Signal Integration** (Next priority): Connect abort mechanism to OS signal handlers
-   - Responsibility: Handle OS signals with direct jump mechanism
-   - Goal: Enable external signals to trigger abort path execution
-   - Foundation: Register signal handlers with abort_target configuration
+8. ✓ **Signal Integration** (COMPLETED): Connect abort mechanism to OS signal handlers
+   - Implemented SignalAbortTarget for thread-local signal dispatch
+   - SignalHandler static methods: register_signal_handlers(), set_abort_target(), get_abort_target()
+   - Thread-local Cell<Option<SignalAbortTarget>> for signal-safe storage
+   - Integrated with ExecutionContext: register_signal_handler(), unregister_signal_handler()
+   - Signals handled: SIGTERM (Unix), SIGABRT (Unix/Windows), SIGINT (Unix/Windows)
+   - Signal handler executes direct jump: mov CFP, mov RFP, jmp collector_ip (O(1))
+   - x86-64: Uses rbp (CFP), r15 (RFP) physical registers
+   - AArch64: Uses x29 (CFP), x28 (RFP) physical registers
+   - 7 comprehensive tests: target creation, thread-local storage, registration, cycles
+   - Total: 144 tests (137 + 7 new Phase 8 tests)
+   - Zero-overhead signal integration: no allocation, no DWARF tables in signal handler
+
+9. **Debugger Integration** (Next priority): Break-on-abort support for debugging
+   - Responsibility: Enable debugger inspection of ghost frame during abort
+   - Goal: Allow stepping through collector execution with full state visibility
+   - Foundation: Integrate with existing CFP/RFP inspection and breakpoint framework
 
 ---
 

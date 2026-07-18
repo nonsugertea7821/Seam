@@ -250,6 +250,38 @@ impl ExecutionContext {
     pub fn has_direct_jump_context(&self) -> bool {
         self.direct_jump_context.is_some()
     }
+
+    /// Phase 8: Register signal handler for this execution context
+    /// 
+    /// Enables OS signals (SIGTERM, SIGABRT, SIGINT) to trigger direct jump abort
+    /// Must be called once per context when signal handling is desired
+    pub fn register_signal_handler(&self) -> Result<(), &'static str> {
+        use crate::signal_handler::{SignalHandler, SignalAbortTarget};
+        
+        // Register the signal handlers (once per thread)
+        SignalHandler::register_signal_handlers()?;
+        
+        // Create abort target from current direct jump context
+        if let Some(ref direct_jump) = self.direct_jump_context {
+            let abort_target = SignalAbortTarget::new(
+                direct_jump.get_collector_ip(),
+                direct_jump.get_target_cfp(),
+                direct_jump.get_target_rfp(),
+            );
+            SignalHandler::set_abort_target(abort_target);
+            Ok(())
+        } else {
+            Err("Direct jump context must be configured before registering signal handler")
+        }
+    }
+    
+    /// Phase 8: Unregister signal handler
+    pub fn unregister_signal_handler(&self) -> Result<(), &'static str> {
+        use crate::signal_handler::SignalHandler;
+        
+        SignalHandler::clear_abort_target();
+        SignalHandler::unregister_signal_handlers()
+    }
 }
 
 #[cfg(test)]
