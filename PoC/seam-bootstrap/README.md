@@ -12,10 +12,10 @@ zero-cost exception handling via physical register bindings.
 | **2** | Transaction Engine | `transaction.rs`, `shadow_buffer.rs` | ✓ Complete | 14 |
 | **3** | Resource Tracking | `resource.rs`, `effect.rs`, `contract.rs`, `sync.rs` | ✓ Complete | 26 |
 | **4** | Compiler Pipeline | `ast.rs`, `compiler.rs`, `codegen.rs` | ✓ Complete | 24 |
-| **5** | Language Parser | ~~`seam_lang.rs`~~ | ✗ Removed | — |
+| **5** | Runtime Linker | `linker.rs` | ✓ Complete | 13 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 18 modules, ~5,600 lines, 92 tests (all passing)**
+**Total: 19 modules, ~5,950 lines, 115 tests (all passing)**
 
 ---
 
@@ -465,9 +465,30 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Added 8 new tests for barrier functionality (all passing)
    - AutoSync now generates and can execute actual memory barriers
 
-4. **Linking**: Runtime linking of compiled fork expressions
-5. **Signal Integration**: Connect abort mechanism to signal handlers
-6. **Optimization**: Profile and optimize hot paths
+4. ✓ **Linking**: ~~Runtime linking of compiled fork expressions~~ **COMPLETED**
+   - Implemented RuntimeLinker with link() operation only (NOT execution)
+   - Created LinkedFork runtime representation from CompiledFork metadata
+   - PathExecutor for per-path metadata (future refactoring: merge with ExecutionContext)
+   - 5-phase execution model deferred to ForkExecutor (future phase)
+   - 13 comprehensive tests for runtime linking (all passing)
+   - Total: 115 tests (102 + 13 new linker tests)
+
+5. **ForkExecutor** (Next priority): Execution coordination with path scheduling
+   - Responsibility: Execute LinkedFork with ExecutionContext
+   - Goal: Implement 5-phase execution (setup → dispatch → barriers → collect → join)
+   - Refactor PathExecutor → PathState (merge with ExecutionContext)
+   - Connect to Phase 3 (MemoryBarrier) and Phase 6 (Direct Jump)
+
+6. **Pseudo-Code Interpreter** (Higher priority than Signal Integration)
+   - Responsibility: Deserialize and execute CompiledFork.generated_code
+   - Goal: Replace placeholder execute_path() with actual code interpretation
+   - Foundation: Path dispatch and resource state collection
+
+7. **Direct Jump Integration**: Connect ForkExecutor abort paths to direct jump abort
+
+8. **Signal Integration** (Deferred - after execution model is stable)
+   - Connect abort mechanism to OS signal handlers
+   - Reason: Implement signals after execution is complete, not before
 
 ---
 
@@ -492,7 +513,8 @@ This README documents the full architecture. For specific questions:
 2. **Exception handling**: See `cfp_rfp.rs` and `direct_jump.rs`
 3. **Transactions**: See `transaction.rs` and `shadow_arena.rs`
 4. **Compilation**: See `ast.rs`, `compiler.rs`, `codegen.rs`
-5. **Abort mechanism**: See `sarm.rs` and inline documentation
+5. **Runtime Linking**: See `linker.rs` and `RUNTIME_LINKING.md`
+6. **Abort mechanism**: See `sarm.rs` and inline documentation
 
 ## References
 
