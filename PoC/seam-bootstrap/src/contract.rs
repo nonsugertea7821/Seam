@@ -60,6 +60,7 @@ impl ResourceRequirement {
 
 /// Contract specifying resource requirements
 #[repr(C)]
+#[derive(Clone)]
 pub struct RequiresContract {
     /// Name of contract (function or path name)
     name: String,
@@ -140,6 +141,7 @@ impl RequiresContract {
 
 /// Contract checker for verifying fork path contracts
 #[repr(C)]
+#[derive(Clone)]
 pub struct ContractChecker {
     /// Named contracts
     contracts: HashMap<String, RequiresContract>,

@@ -4,6 +4,7 @@
 //! (CFP/RFP) and static abort/collector semantics.
 //! Includes 2PST (Two-Phase Static Transaction) support for fork paths.
 //! Phase 3: Resource tracking with requires contracts and automatic synchronization.
+//! Phase 4: Compiler integration with AST, parsing, and code generation.
 
 pub mod pssa;
 pub mod context;
@@ -16,6 +17,9 @@ pub mod fork;
 pub mod effect;
 pub mod contract;
 pub mod sync;
+pub mod ast;
+pub mod compiler;
+pub mod codegen;
 
 #[cfg(target_arch = "x86_64")]
 pub mod arch {
@@ -40,6 +44,9 @@ pub use fork::{ForkContext, ForkGraph, ForkPath};
 pub use effect::{Effect, EffectType, EffectSet, EffectAnalysis};
 pub use contract::{RequiresContract, ContractChecker, ResourceRequirement, RequirementLevel};
 pub use sync::{AutoSync, SyncPoint, SyncKind};
+pub use ast::{ResourceId, AccessType, AccessSpec, RequiresClause, ForkPath as AstForkPath, ForkExpr, CompiledFork};
+pub use compiler::{SeamCompiler, CompileError, CompileResult, CompileAnalysis};
+pub use codegen::{CodeGenerator, GeneratedCode};
 
 /// Seam VM initialization
 pub fn vm_init(arena_size: usize) -> Result<ExecutionContext, &'static str> {

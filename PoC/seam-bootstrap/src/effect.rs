@@ -78,6 +78,7 @@ impl Ord for Effect {
 
 /// Set of effects for a single path
 #[repr(C)]
+#[derive(Clone)]
 pub struct EffectSet {
     /// Effects sorted by resource ID
     effects: BTreeSet<Effect>,
@@ -176,6 +177,7 @@ impl Default for EffectSet {
 
 /// Analysis of effects for a fork with multiple paths
 #[repr(C)]
+#[derive(Clone)]
 pub struct EffectAnalysis {
     /// Path ID to effect set mapping
     path_effects: Vec<EffectSet>,

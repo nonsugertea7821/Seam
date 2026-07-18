@@ -89,6 +89,7 @@ impl Ord for SyncPoint {
 
 /// Automatic synchronization analyzer and manager
 #[repr(C)]
+#[derive(Clone)]
 pub struct AutoSync {
     /// Effect analysis from fork
     analysis: Option<EffectAnalysis>,
