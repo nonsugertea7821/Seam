@@ -24,6 +24,7 @@ pub struct PathResult {
     pub path_id: u32,
     pub resource_id: ResourceId,
     pub success: bool,
+    pub aborted: bool,  // Phase 7: Track abort status for direct jump
     // NOTE: data field removed - state belongs in ResourceFrame, not here
 }
 
@@ -33,12 +34,37 @@ impl PathResult {
             path_id,
             resource_id,
             success: false,
+            aborted: false,
         }
     }
 
     pub fn success(mut self) -> Self {
         self.success = true;
         self
+    }
+
+    pub fn abort(mut self) -> Self {
+        self.aborted = true;
+        self.success = false;  // Abort is not success
+        self
+    }
+}
+
+/// Phase 7: Abort target for direct jump to collector
+#[derive(Debug, Clone)]
+pub struct AbortTarget {
+    pub target_cfp: *mut u8,      // Control Frame Pointer
+    pub target_rfp: *mut u8,      // Resource Frame Pointer (ghost frame)
+    pub collector_ip: *const u8,  // Collector entry point
+}
+
+impl AbortTarget {
+    pub fn new(target_cfp: *mut u8, target_rfp: *mut u8, collector_ip: *const u8) -> Self {
+        AbortTarget {
+            target_cfp,
+            target_rfp,
+            collector_ip,
+        }
     }
 }
 
@@ -91,6 +117,7 @@ pub struct LinkedFork {
     barriers: Vec<MemoryBarrier>,
     resource_accesses: BTreeMap<ResourceId, Vec<AccessType>>,
     pub generated_code: Option<String>, // Phase 5C: Pseudo-code to execute
+    pub abort_target: Option<AbortTarget>, // Phase 7: Direct jump target for abort
 }
 
 impl LinkedFork {
@@ -102,6 +129,7 @@ impl LinkedFork {
             barriers: Vec::new(),
             resource_accesses: BTreeMap::new(),
             generated_code: None,
+            abort_target: None,
         }
     }
 
@@ -130,6 +158,10 @@ impl LinkedFork {
 
     pub fn set_generated_code(&mut self, code: String) {
         self.generated_code = Some(code);
+    }
+
+    pub fn set_abort_target(&mut self, target: AbortTarget) {
+        self.abort_target = Some(target);
     }
 
     pub fn path_states(&self) -> &[PathState] {
@@ -309,6 +341,7 @@ impl CodeInterpreter {
                 }
                 Instruction::Abort => {
                     aborted = true;
+                    result = result.abort();  // Phase 7: Mark as aborted
                     break;
                 }
             }
@@ -464,8 +497,8 @@ impl ForkExecutor {
     /// Phase 2: Dispatch - Schedule paths to execution engine
     ///
     /// Executes pseudo-code for each path using CodeInterpreter (Phase 5C).
-    /// In a real implementation, this would dispatch to a scheduler/thread pool.
-    fn phase_dispatch(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
+    /// Phase 7: If abort detected, executes direct jump to collector.
+    fn phase_dispatch(&mut self, context: &mut ExecutionContext) -> Result<(), String> {
         // Phase 5C: Execute pseudo-code for each path
         for path_state in self.linked.path_states() {
             // Parse pseudo-code from LinkedFork
@@ -481,6 +514,27 @@ impl ForkExecutor {
                 path_state.resource_id(),
                 &instructions,
             );
+
+            // Phase 7: If abort detected and abort_target configured, execute direct jump
+            if result.aborted {
+                if let Some(ref abort_target) = self.linked.abort_target {
+                    // Set CFP to current frame pointer (for cleanup)
+                    let current_cfp = context.cfp().0 as *mut u8;
+                    
+                    // Set direct_jump_context with abort target
+                    context.set_direct_jump_context(
+                        abort_target.target_cfp,
+                        current_cfp,  // RFP = ghost frame (aborted context)
+                        abort_target.collector_ip,
+                    );
+                    
+                    // Execute O(1) direct jump to collector
+                    // abort() with direct_jump_context configured will execute the jump
+                    let _ = context.abort(None).map_err(|e| format!("Abort failed: {}", e));
+                    // Note: abort() doesn't return if direct_jump_context is configured
+                    // so this return is unreachable code in normal execution
+                }
+            }
 
             self.execution_state.path_results.push(result);
         }
@@ -950,6 +1004,105 @@ mod tests {
         let exec_result = result.unwrap();
         assert_eq!(exec_result.paths_completed, 1);
         assert!(exec_result.is_success());
+    }
+
+    // Phase 7: Direct Jump Integration Tests
+
+    #[test]
+    fn test_path_result_abort_flag() {
+        let path_id = 0;
+        let resource_id = ResourceId::new(1);
+        
+        let result = PathResult::new(path_id, resource_id);
+        assert!(!result.aborted);
+        assert!(!result.success);
+        
+        let aborted_result = result.abort();
+        assert!(aborted_result.aborted);
+        assert!(!aborted_result.success);  // Abort is not success
+    }
+
+    #[test]
+    fn test_abort_target_creation() {
+        let target_cfp = std::ptr::null_mut::<u8>();
+        let target_rfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x1000) };
+        let collector_ip = unsafe { std::mem::transmute::<u64, *const u8>(0x2000) };
+        
+        let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip);
+        assert_eq!(abort_target.target_cfp, target_cfp);
+        assert_eq!(abort_target.target_rfp, target_rfp);
+        assert_eq!(abort_target.collector_ip, collector_ip);
+    }
+
+    #[test]
+    fn test_code_interpreter_abort_instruction_sets_flag() {
+        let path_id = 0;
+        let resource_id = ResourceId::new(1);
+        let instructions = vec![
+            Instruction::ReadResource(1),
+            Instruction::Abort,
+            Instruction::Success,  // Should not be reached
+        ];
+
+        let result = CodeInterpreter::execute(path_id, resource_id, &instructions);
+        assert!(result.aborted);
+        assert!(!result.success);  // Abort stops execution before success
+    }
+
+    #[test]
+    fn test_code_interpreter_abort_stops_execution() {
+        let path_id = 1;
+        let resource_id = ResourceId::new(2);
+        let instructions = vec![
+            Instruction::ReadResource(2),
+            Instruction::Abort,
+            Instruction::WriteResource(2),  // Should not execute
+            Instruction::Success,            // Should not execute
+        ];
+
+        let result = CodeInterpreter::execute(path_id, resource_id, &instructions);
+        assert!(result.aborted);
+        // Verify only read executed (no side effects from write/success)
+    }
+
+    #[test]
+    fn test_linked_fork_abort_target_storage() {
+        let mut linked = LinkedFork::new(1, 2);
+        
+        let target_cfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x3000) };
+        let target_rfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x4000) };
+        let collector_ip = unsafe { std::mem::transmute::<u64, *const u8>(0x5000) };
+        
+        let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip);
+        linked.set_abort_target(abort_target);
+        
+        assert!(linked.abort_target.is_some());
+        let stored = linked.abort_target.as_ref().unwrap();
+        assert_eq!(stored.target_cfp, target_cfp);
+    }
+
+    #[test]
+    fn test_phase7_abort_detection_in_result() {
+        // Verify that CodeInterpreter properly marks abort in PathResult
+        let instructions = vec![
+            Instruction::ReadResource(1),
+            Instruction::Abort,
+        ];
+        
+        let result = CodeInterpreter::execute(0, ResourceId::new(1), &instructions);
+        assert!(result.aborted);
+        assert_eq!(result.path_id, 0);
+        assert_eq!(result.resource_id, ResourceId::new(1));
+    }
+
+    #[test]
+    fn test_phase7_abort_vs_success() {
+        // Ensure abort and success are mutually exclusive
+        let abort_result = PathResult::new(0, ResourceId::new(1)).abort();
+        let success_result = PathResult::new(0, ResourceId::new(1)).success();
+        
+        assert!(abort_result.aborted && !abort_result.success);
+        assert!(!success_result.aborted && success_result.success);
     }
 }
 

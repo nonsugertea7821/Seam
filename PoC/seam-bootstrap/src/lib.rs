@@ -54,7 +54,7 @@ pub use sync::{AutoSync, SyncPoint, SyncKind, MemoryBarrier, BarrierKind};
 pub use ast::{ResourceId, AccessType, AccessSpec, RequiresClause, ForkPath as AstForkPath, ForkExpr, CompiledFork};
 pub use compiler::{SeamCompiler, CompileError, CompileResult, CompileAnalysis};
 pub use codegen::{CodeGenerator, GeneratedCode};
-pub use linker::{RuntimeLinker, LinkedFork, PathState, PathResult, ForkExecutor, ForkExecutionResult, CodeInterpreter, Instruction, ResourceAccessTracker};
+pub use linker::{RuntimeLinker, LinkedFork, PathState, PathResult, ForkExecutor, ForkExecutionResult, CodeInterpreter, Instruction, ResourceAccessTracker, AbortTarget};
 pub use cfp_rfp::{PhysicalRegisters, HybridContextSwitch};
 pub use shadow_arena::{ShadowBuffer as ShadowBufferArena, ShadowArena};
 pub use sarm::{SARMEntry, SARMTable};

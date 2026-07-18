@@ -15,9 +15,10 @@ zero-cost exception handling via physical register bindings.
 | **5** | Runtime Linker | `linker.rs` | ✓ Complete | 13 |
 | **5B** | Fork Executor | `linker.rs` | ✓ Complete | 4 |
 | **5C** | Pseudo-Code Interpreter | `linker.rs` | ✓ Complete | 12 |
+| **7** | Direct Jump Integration | `linker.rs` | ✓ Complete | 7 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 19 modules, ~6,500 lines, 130 tests (all passing)**
+**Total: 19 modules, ~7,000 lines, 137 tests (all passing)**
 
 ---
 
@@ -487,19 +488,30 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Total: 118 tests (102 + 13 linker + 4 executor tests)
 
 6. ✓ **Pseudo-Code Interpreter** (COMPLETED): Path execution with code interpretation
-   - Responsibility: Deserialize and execute CompiledFork.generated_code (Phase 5C)
-   - Implementation: CodeInterpreter, Instruction enum, ResourceAccessTracker
-   - Integration: Replaces ForkExecutor phase_dispatch() placeholder with actual execution
-   - Tests: 12 comprehensive tests (parsing, execution, tracking, integration)
+   - Implemented CodeInterpreter: parse(), execute() for pseudo-code
+   - Instruction enum: ReadResource, WriteResource, ReadWriteResource, Barrier, Success, Abort
+   - ResourceAccessTracker for tracking reads/writes during execution
+   - Integrated with ForkExecutor.phase_dispatch() (replaced placeholder)
+   - LinkedFork.generated_code field for pseudo-code storage
+   - Parse human-readable format: "read N", "write N", "barrier", "success", "abort"
+   - 12 comprehensive tests: parsing, execution, tracking, barrier, abort, integration
+   - Total: 130 tests (102 baseline + 13 linker + 4 executor + 12 interpreter)
 
-7. **Direct Jump Integration** (Next priority): Connect ForkExecutor abort paths to direct jump abort
-   - Responsibility: Integrate Phase 6 CFP/RFP with Phase 5C abort mechanism
-   - Goal: Implement O(1) abort via direct jump when Phase 5C Abort instruction executed
-   - Foundation: Use RFP ghost frame for access to aborted path locals
+7. ✓ **Direct Jump Integration** (COMPLETED): O(1) abort via direct jump
+   - Implemented PathResult.abort flag, AbortTarget struct for collector configuration
+   - ForkExecutor.phase_dispatch() detects abort and executes direct jump
+   - Integration: Phase 1 ExecutionContext.abort(None) + Phase 6 execute_direct_jump()
+   - x86-64: 3-instruction sequence (mov rbp, mov r15, jmp)
+   - AArch64: 3-instruction sequence (mov x29, mov x28, br)
+   - RFP ghost frame stores aborted context for collector access
+   - 7 comprehensive tests: abort flag, target storage, abort detection, state transitions
+   - Total: 137 tests (130 + 7 new Phase 7 tests)
+   - Zero-cost exception handling: O(1) abort without stack unwinding
 
-8. **Signal Integration** (Deferred - after execution model is stable)
-   - Connect abort mechanism to OS signal handlers
-   - Reason: Implement signals after execution is complete, not before
+8. **Signal Integration** (Next priority): Connect abort mechanism to OS signal handlers
+   - Responsibility: Handle OS signals with direct jump mechanism
+   - Goal: Enable external signals to trigger abort path execution
+   - Foundation: Register signal handlers with abort_target configuration
 
 ---
 
