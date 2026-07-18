@@ -112,12 +112,13 @@ Phase 3: Abort
 | `resource.rs` | Global resources and access sets | `GlobalResource`, `UniqueRecord`, `AccessSet` |
 | `effect.rs` | Static effect analysis | `Effect`, `EffectType`, `EffectAnalysis` |
 | `contract.rs` | Requires contracts and verification | `RequiresContract`, `ContractChecker`, `ResourceRequirement` |
-| `sync.rs` | Automatic synchronization points | `AutoSync`, `SyncPoint`, `SyncKind` |
+| `sync.rs` | Automatic synchronization with memory barriers | `AutoSync`, `SyncPoint`, `SyncKind`, `MemoryBarrier`, `BarrierKind` |
 
 **Key Features:**
 - Static resource requirement verification
 - Compile-time conflict detection (RAW, WAW, WAR)
-- Automatic barrier insertion
+- ✅ **Automatic memory barrier insertion** (Acquire/Release/FullFence)
+- ✅ **Thread fence execution** for synchronization
 - No-cost static synchronization
 
 ### **Phase 4: Compiler Pipeline**
@@ -457,7 +458,13 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Cross-platform support with conditional compilation
    - All 93 tests passing with new arena implementation
 
-3. **Barrier Insertion**: Enhance `sync.rs` with actual memory barriers
+3. ✓ **Barrier Insertion**: ~~Enhance `sync.rs` with actual memory barriers~~ **COMPLETED**
+   - Added MemoryBarrier type with Acquire/Release/FullFence semantics
+   - Mapped SyncKind (RAW/WAR/WAW) to appropriate atomic Ordering
+   - Implemented thread fence execution (std::sync::atomic::fence)
+   - Added 8 new tests for barrier functionality (all passing)
+   - AutoSync now generates and can execute actual memory barriers
+
 4. **Linking**: Runtime linking of compiled fork expressions
 5. **Signal Integration**: Connect abort mechanism to signal handlers
 6. **Optimization**: Profile and optimize hot paths
