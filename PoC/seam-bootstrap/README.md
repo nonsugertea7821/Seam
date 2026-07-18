@@ -60,15 +60,18 @@ exception handling. Three key architectural principles:
 
 | Module | Purpose | Key Types |
 |--------|---------|-----------|
-| `pssa.rs` | Path-bounded Shadow Stack Arena | `Arena`, `ArenaCheckpoint` |
+| `pssa.rs` | Virtual memory-based Path-bounded Shadow Stack Arena | `Arena`, `ArenaCheckpoint` |
 | `context.rs` | Execution context with CFP/RFP | `ExecutionContext`, `FramePointer`, `ControlFramePtr`, `ResourceFramePtr` |
 | `abort.rs` | Abort signaling and collector table | `AbortSignal`, `CollectorTable`, `SARMEntry` |
 
 **Key Features:**
-- Thread-local unbounded arena with dynamic growth
-- Checkpoint save/restore for CFP/RFP
-- Bump allocation O(1) allocation
-- Graceful arena exhaustion handling
+- ✅ **mmap-based virtual memory allocation** (true OS page management)
+- ✅ **Guard pages** at top and bottom (PROT_NONE) prevent buffer overruns
+- ✅ Thread-local unbounded arena with dynamic growth
+- ✅ Checkpoint save/restore for CFP/RFP
+- ✅ Bump allocation O(1) allocation
+- ✅ Graceful arena exhaustion handling
+- ✅ Cross-platform (Windows VirtualAlloc, Unix mmap)
 
 ### **Phase 2: Transaction Engine**
 
@@ -448,7 +451,12 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - abort() method now uses direct jump instead of traditional unwinding
    - Thread-local hybrid context tracks CFP/RFP at runtime
    
-2. **PSSA Modernization**: Implement mmap-based arena (true virtual memory)
+2. ✓ **PSSA Modernization**: ~~Implement mmap-based arena (true virtual memory)~~ **COMPLETED**
+   - Replaced std::alloc with OS virtual memory (VirtualAlloc on Windows, mmap on Unix)
+   - Added guard pages (PROT_NONE) at top and bottom for overflow protection
+   - Cross-platform support with conditional compilation
+   - All 93 tests passing with new arena implementation
+
 3. **Barrier Insertion**: Enhance `sync.rs` with actual memory barriers
 4. **Linking**: Runtime linking of compiled fork expressions
 5. **Signal Integration**: Connect abort mechanism to signal handlers
