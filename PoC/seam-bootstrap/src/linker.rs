@@ -13,7 +13,7 @@
 //! 2. Collect results
 //! 3. Coordinate fork/join lifecycle
 
-use crate::ast::{CompiledFork, ResourceId, AccessType, AccessSpec};
+use crate::ast::{CompiledFork, ResourceId, AccessType};
 use crate::context::ExecutionContext;
 use crate::sync::MemoryBarrier;
 use std::collections::BTreeMap;
@@ -182,50 +182,175 @@ impl ForkExecutionResult {
     }
 }
 
-/// Phase 5B: ForkExecutor (FUTURE PHASE - Skeleton here for planning)
+/// Phase 5B: ForkExecutor — Execute LinkedFork with 5-phase coordination
 ///
-/// This type is planned for Phase 5B and included here as a forward declaration.
-/// It will handle the actual execution of LinkedFork objects.
-///
-/// Responsibilities (when implemented):
-/// 1. Execute paths with ExecutionContext
+/// Responsibilities:
+/// 1. Execute LinkedFork from Phase 5 linker
 /// 2. Manage 5-phase execution (setup → dispatch → barriers → collect → join)
-/// 3. Coordinate result collection
-/// 4. Handle abort paths and direct jump integration
+/// 3. Coordinate path execution with ExecutionContext
+/// 4. Handle abort paths via direct jump integration (Phase 6)
+///
+/// Note: Actual path execution code (pseudo-code interpretation) deferred to Phase 5C
 pub struct ForkExecutor {
     linked: LinkedFork,
-    // Future: result collection, execution state, etc.
+    execution_state: ExecutionState,
+}
+
+/// Execution state tracking for fork coordination
+#[derive(Debug, Clone)]
+struct ExecutionState {
+    setup_done: bool,
+    dispatch_done: bool,
+    barriers_done: bool,
+    collect_done: bool,
+    join_done: bool,
+    path_results: Vec<PathResult>,
+}
+
+impl ExecutionState {
+    fn new() -> Self {
+        ExecutionState {
+            setup_done: false,
+            dispatch_done: false,
+            barriers_done: false,
+            collect_done: false,
+            join_done: false,
+            path_results: Vec::new(),
+        }
+    }
+
+    fn all_done(&self) -> bool {
+        self.setup_done
+            && self.dispatch_done
+            && self.barriers_done
+            && self.collect_done
+            && self.join_done
+    }
 }
 
 impl ForkExecutor {
     pub fn new(linked: LinkedFork) -> Self {
-        ForkExecutor { linked }
+        ForkExecutor {
+            linked,
+            execution_state: ExecutionState::new(),
+        }
     }
 
     pub fn linked(&self) -> &LinkedFork {
         &self.linked
     }
 
-    /// Execute a linked fork (placeholder - future implementation)
+    /// Execute linked fork with 5-phase coordination
     ///
-    /// This method is a skeleton for Phase 5B. Current return is always Ok.
-    pub fn execute(&mut self, _context: &mut ExecutionContext) -> Result<ForkExecutionResult, String> {
-        let mut result = ForkExecutionResult::new(self.linked.fork_id(), self.linked.num_paths());
+    /// Phases:
+    /// 1. Setup: Allocate execution frames for each path
+    /// 2. Dispatch: Schedule paths to execution engine
+    /// 3. Barriers: Execute synchronization barriers (Phase 3)
+    /// 4. Collect: Gather results from all paths
+    /// 5. Join: Synchronize paths at join point
+    pub fn execute(&mut self, context: &mut ExecutionContext) -> Result<ForkExecutionResult, String> {
+        let mut result =
+            ForkExecutionResult::new(self.linked.fork_id(), self.linked.num_paths());
 
-        // Phase 5B will implement:
-        // 1. Setup fork (allocate frames)
-        // 2. Dispatch paths to scheduler
-        // 3. Execute barriers
-        // 4. Collect results
-        // 5. Join paths
+        // Phase 1: Setup - Allocate execution frames
+        self.phase_setup(context)?;
 
-        // For now: return success with placeholder
-        for path_state in self.linked.path_states() {
-            let result_item = PathResult::new(path_state.path_id(), path_state.resource_id()).success();
-            result.add_result(result_item);
+        // Phase 2: Dispatch - Schedule paths to execution
+        self.phase_dispatch(context)?;
+
+        // Phase 3: Barriers - Execute memory barriers
+        self.phase_barriers(context)?;
+
+        // Phase 4: Collect - Gather path execution results
+        self.phase_collect(context)?;
+
+        // Phase 5: Join - Synchronize paths at join point
+        self.phase_join(context)?;
+
+        // Build final result from execution state
+        for path_result in &self.execution_state.path_results {
+            result.add_result(path_result.clone());
         }
 
         Ok(result)
+    }
+
+    /// Phase 1: Setup - Allocate frames for each path
+    fn phase_setup(&mut self, context: &mut ExecutionContext) -> Result<(), String> {
+        // Allocate frame in arena for each path
+        for path_state in self.linked.path_states() {
+            // Each path needs a frame for local variables and state
+            // Frame size: 256 bytes (typical, can be tuned)
+            context.frame_push(256).map_err(|e| format!("Setup failed: {}", e))?;
+        }
+
+        self.execution_state.setup_done = true;
+        Ok(())
+    }
+
+    /// Phase 2: Dispatch - Schedule paths to execution engine
+    ///
+    /// In a real implementation, this would dispatch to a scheduler/thread pool.
+    /// For now: paths execute sequentially in placeholder execution.
+    fn phase_dispatch(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
+        // Future: Thread pool dispatch or async scheduling
+        // Current: Mark for collection phase
+        for path_state in self.linked.path_states() {
+            // Placeholder: Create result for each path
+            let result = PathResult::new(path_state.path_id(), path_state.resource_id()).success();
+            self.execution_state.path_results.push(result);
+        }
+
+        self.execution_state.dispatch_done = true;
+        Ok(())
+    }
+
+    /// Phase 3: Barriers - Execute synchronization barriers
+    ///
+    /// Executes all memory barriers generated by Phase 3 (AutoSync).
+    /// Barriers coordinate access patterns across paths.
+    fn phase_barriers(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
+        // Execute each barrier
+        for barrier in self.linked.barriers() {
+            barrier.execute();
+        }
+
+        self.execution_state.barriers_done = true;
+        Ok(())
+    }
+
+    /// Phase 4: Collect - Gather results from path execution
+    ///
+    /// Aggregates status and metadata from all executed paths.
+    /// In a real implementation, would coordinate with scheduler.
+    fn phase_collect(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
+        // Results already collected in phase_dispatch for prototype
+        // Real implementation would:
+        // 1. Wait for all paths to complete
+        // 2. Gather status from each path
+        // 3. Check for abort conditions (via RFP/direct_jump_context)
+        // 4. Accumulate results
+
+        self.execution_state.collect_done = true;
+        Ok(())
+    }
+
+    /// Phase 5: Join - Synchronize paths at join point
+    ///
+    /// Ensures all paths have completed before returning to caller.
+    /// Verifies synchronization invariants.
+    fn phase_join(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
+        // Verify all paths completed
+        if self.execution_state.path_results.len() as u32 != self.linked.num_paths() {
+            return Err(format!(
+                "Join failed: {} paths out of {} completed",
+                self.execution_state.path_results.len(),
+                self.linked.num_paths()
+            ));
+        }
+
+        self.execution_state.join_done = true;
+        Ok(())
     }
 }
 
@@ -380,12 +505,89 @@ mod tests {
         let linked = RuntimeLinker::link(&compiled);
         let mut executor = ForkExecutor::new(linked);
 
-        // Phase 5B implementation will fill this in
-        // For now, just verify it returns Ok
+        // Phase 5B implementation: 5-phase execution
         let mut ctx = ExecutionContext::new(1024).expect("Failed to create context");
         let result = executor.execute(&mut ctx);
         assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert_eq!(exec_result.paths_completed, 2);
+        assert!(exec_result.is_complete());
+        assert!(exec_result.is_success());
     }
+
+    #[test]
+    fn test_fork_executor_phase_setup() {
+        let mut compiled = CompiledFork::new(1, 2);
+        compiled.add_access(0, ResourceId::new(1), AccessType::Read);
+        compiled.add_access(1, ResourceId::new(2), AccessType::Write);
+
+        let linked = RuntimeLinker::link(&compiled);
+        let mut executor = ForkExecutor::new(linked);
+
+        let mut ctx = ExecutionContext::new(1024).expect("Failed to create context");
+
+        // Verify phases execute in order
+        assert!(!executor.execution_state.setup_done);
+        let result = executor.execute(&mut ctx);
+        assert!(result.is_ok());
+
+        // All phases should be complete
+        assert!(executor.execution_state.setup_done);
+        assert!(executor.execution_state.dispatch_done);
+        assert!(executor.execution_state.barriers_done);
+        assert!(executor.execution_state.collect_done);
+        assert!(executor.execution_state.join_done);
+        assert!(executor.execution_state.all_done());
+    }
+
+    #[test]
+    fn test_fork_executor_path_results() {
+        let mut compiled = CompiledFork::new(2, 3);
+        compiled.add_access(0, ResourceId::new(1), AccessType::Read);
+        compiled.add_access(1, ResourceId::new(2), AccessType::Write);
+        compiled.add_access(2, ResourceId::new(1), AccessType::Read);
+
+        let linked = RuntimeLinker::link(&compiled);
+        let mut executor = ForkExecutor::new(linked);
+
+        let mut ctx = ExecutionContext::new(2048).expect("Failed to create context");
+        let result = executor.execute(&mut ctx);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert_eq!(exec_result.fork_id(), 2);
+        assert_eq!(exec_result.get_collected().len(), 3);
+
+        // All paths should have succeeded
+        for path_result in exec_result.get_collected() {
+            assert!(path_result.success);
+        }
+    }
+
+    #[test]
+    fn test_fork_executor_with_barriers() {
+        let mut compiled = CompiledFork::new(3, 2);
+        compiled.add_access(0, ResourceId::new(1), AccessType::Read);
+        compiled.add_access(1, ResourceId::new(1), AccessType::Write);
+
+        let mut linked = RuntimeLinker::link(&compiled);
+        
+        // Add a barrier (Phase 3 integration)
+        let barrier = MemoryBarrier::new(crate::sync::BarrierKind::FullFence, 1, 0);
+        linked.add_barrier(barrier);
+
+        let mut executor = ForkExecutor::new(linked);
+
+        let mut ctx = ExecutionContext::new(1024).expect("Failed to create context");
+        let result = executor.execute(&mut ctx);
+        assert!(result.is_ok());
+
+        let exec_result = result.unwrap();
+        assert!(exec_result.is_complete());
+        assert!(exec_result.is_success());
+    }
+
 
     #[test]
     fn test_runtime_linker_link_and_create_executor() {

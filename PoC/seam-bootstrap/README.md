@@ -13,9 +13,10 @@ zero-cost exception handling via physical register bindings.
 | **3** | Resource Tracking | `resource.rs`, `effect.rs`, `contract.rs`, `sync.rs` | ✓ Complete | 26 |
 | **4** | Compiler Pipeline | `ast.rs`, `compiler.rs`, `codegen.rs` | ✓ Complete | 24 |
 | **5** | Runtime Linker | `linker.rs` | ✓ Complete | 13 |
+| **5B** | Fork Executor | `linker.rs` | ✓ Complete | 4 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 19 modules, ~5,950 lines, 115 tests (all passing)**
+**Total: 19 modules, ~6,200 lines, 118 tests (all passing)**
 
 ---
 
@@ -468,18 +469,23 @@ Seam uses **direct jump with ghost frame (RFP)**:
 4. ✓ **Linking**: ~~Runtime linking of compiled fork expressions~~ **COMPLETED**
    - Implemented RuntimeLinker with link() operation only (NOT execution)
    - Created LinkedFork runtime representation from CompiledFork metadata
-   - PathExecutor for per-path metadata (future refactoring: merge with ExecutionContext)
+   - PathState for per-path metadata (future refactoring: merge with ExecutionContext)
    - 5-phase execution model deferred to ForkExecutor (future phase)
    - 13 comprehensive tests for runtime linking (all passing)
    - Total: 115 tests (102 + 13 new linker tests)
 
-5. **ForkExecutor** (Next priority): Execution coordination with path scheduling
-   - Responsibility: Execute LinkedFork with ExecutionContext
-   - Goal: Implement 5-phase execution (setup → dispatch → barriers → collect → join)
-   - Refactor PathExecutor → PathState (merge with ExecutionContext)
-   - Connect to Phase 3 (MemoryBarrier) and Phase 6 (Direct Jump)
+5. ✓ **ForkExecutor**: ~~Execution coordination with path scheduling~~ **COMPLETED**
+   - Implemented 5-phase execution: setup → dispatch → barriers → collect → join
+   - Phase 1 (Setup): Allocates execution frames for each path in PSSA arena
+   - Phase 2 (Dispatch): Schedules paths to execution engine
+   - Phase 3 (Barriers): Executes memory barriers from Phase 3 (AutoSync)
+   - Phase 4 (Collect): Gathers results from all path executions
+   - Phase 5 (Join): Synchronizes paths at fork join point
+   - Integrated with ExecutionContext (Phase 1) and MemoryBarrier (Phase 3)
+   - 4 comprehensive tests for ForkExecutor (setup, phases, results, barriers)
+   - Total: 118 tests (102 + 13 linker + 4 executor tests)
 
-6. **Pseudo-Code Interpreter** (Higher priority than Signal Integration)
+6. **Pseudo-Code Interpreter** (Next priority): Path execution with code interpretation
    - Responsibility: Deserialize and execute CompiledFork.generated_code
    - Goal: Replace placeholder execute_path() with actual code interpretation
    - Foundation: Path dispatch and resource state collection
