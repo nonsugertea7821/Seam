@@ -42,6 +42,8 @@ pub struct HybridContextSwitch {
     target_rfp: *mut u8,
     /// Collector entry point instruction pointer
     collector_ip: *const u8,
+    /// Collector channel identity used for parent-boundary resolution
+    collector_channel_id: u32,
 }
 
 impl HybridContextSwitch {
@@ -51,11 +53,17 @@ impl HybridContextSwitch {
     /// - target_cfp: New control frame (where collector executes)
     /// - target_rfp: Ghost frame (aborted context for cleanup access)
     /// - collector_ip: Entry point of collector function
-    pub fn new(target_cfp: *mut u8, target_rfp: *mut u8, collector_ip: *const u8) -> Self {
+    pub fn new(
+        target_cfp: *mut u8,
+        target_rfp: *mut u8,
+        collector_ip: *const u8,
+        collector_channel_id: u32,
+    ) -> Self {
         HybridContextSwitch {
             target_cfp,
             target_rfp,
             collector_ip,
+            collector_channel_id,
         }
     }
 
@@ -120,6 +128,11 @@ impl HybridContextSwitch {
     pub fn get_collector_ip(&self) -> *const u8 {
         self.collector_ip
     }
+
+    /// Get collector channel identity.
+    pub fn get_collector_channel_id(&self) -> u32 {
+        self.collector_channel_id
+    }
 }
 
 thread_local! {
@@ -151,10 +164,11 @@ mod tests {
         let rfp = std::ptr::null_mut();
         let collector_ip = std::ptr::null();
 
-        let switch = HybridContextSwitch::new(cfp, rfp, collector_ip);
+        let switch = HybridContextSwitch::new(cfp, rfp, collector_ip, 7);
         assert_eq!(switch.get_target_cfp(), cfp);
         assert_eq!(switch.get_target_rfp(), rfp);
         assert_eq!(switch.get_collector_ip(), collector_ip);
+        assert_eq!(switch.get_collector_channel_id(), 7);
     }
 
     #[test]
@@ -165,9 +179,10 @@ mod tests {
         let rfp = base.wrapping_add(256);
         let collector_ip = 0x4000 as *const u8;
 
-        let switch = HybridContextSwitch::new(cfp, rfp, collector_ip);
+        let switch = HybridContextSwitch::new(cfp, rfp, collector_ip, 11);
         assert_eq!(switch.get_target_cfp(), cfp);
         assert_eq!(switch.get_target_rfp(), rfp);
+        assert_eq!(switch.get_collector_channel_id(), 11);
     }
 
     #[test]

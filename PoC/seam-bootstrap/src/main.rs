@@ -4,7 +4,7 @@ use seam_bootstrap::{
     shadow_arena::get_shadow_arena,
     sarm::SARMTable,
     gac::LoopFrame,
-    direct_jump::CollectBindingTable,
+    direct_jump::{CollectBindingTable, set_collect_bindings},
 };
 
 fn main() {
@@ -207,6 +207,7 @@ fn main() {
     collect_table.register_collect_binding(
         10,  // source_channel_id (e.g., Coordinator)
         11,  // collector_channel_id (e.g., CoordinatorRecovery)
+        u32::MAX,  // parent_channel_id (root boundary)
         0x7000 as *const u8,  // collector_ip
         0x8000 as *mut u8,    // target_cfp
         64,  // local_resource_offset
@@ -215,10 +216,14 @@ fn main() {
     collect_table.register_collect_binding(
         20,  // source_channel_id (e.g., Processor)
         21,  // collector_channel_id (e.g., ProcessorRecovery)
+        10,   // parent_channel_id (Channel 10 boundary)
         0x9000 as *const u8,
         0xA000 as *mut u8,
         32,
     ).unwrap();
+
+    // Publish the binding table for secondary-abort resolution.
+    set_collect_bindings(collect_table.clone());
 
     println!("✓ Collect bindings registered:");
     println!("  - Total bindings: {}", collect_table.binding_count());
@@ -226,6 +231,7 @@ fn main() {
     for (source_id, target) in collect_table.all_bindings() {
         println!("\n  :collect binding (Channel {}):", source_id);
         println!("    - Collector channel: {}", target.collector_channel_id);
+        println!("    - Parent channel: {}", target.parent_channel_id);
         println!("    - Target CFP: 0x{:x}", target.target_cfp as usize);
         println!("    - Collector entry: 0x{:x}", target.collector_ip as usize);
         println!("    - Abort: O(1) direct jmp to 0x{:x}", target.collector_ip as usize);

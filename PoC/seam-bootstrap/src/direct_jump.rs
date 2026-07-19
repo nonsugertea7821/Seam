@@ -9,6 +9,9 @@
 //! → Direct jmp (not call) to collector entry
 
 use std::collections::HashMap;
+use std::cell::RefCell;
+
+const NO_PARENT_CHANNEL_ID: u32 = u32::MAX;
 
 /// Direct jump target for :collect resolution
 #[repr(C)]
@@ -18,6 +21,8 @@ pub struct DirectJumpTarget {
     pub collector_ip: *const u8,
     /// Channel ID of collector (for identification)
     pub collector_channel_id: u32,
+    /// Parent channel ID that introduced this collect boundary
+    pub parent_channel_id: u32,
     /// CFP value for control transfer
     pub target_cfp: *mut u8,
     /// Offset from RFP where local resources start
@@ -28,23 +33,33 @@ impl DirectJumpTarget {
     pub fn new(
         collector_ip: *const u8,
         collector_channel_id: u32,
+        parent_channel_id: u32,
         target_cfp: *mut u8,
         local_resource_offset: i32,
     ) -> Self {
         DirectJumpTarget {
             collector_ip,
             collector_channel_id,
+            parent_channel_id,
             target_cfp,
             local_resource_offset,
         }
+    }
+
+    /// Check whether this collect boundary has a static parent channel.
+    pub fn has_parent_channel(&self) -> bool {
+        self.parent_channel_id != NO_PARENT_CHANNEL_ID
     }
 }
 
 /// Collect binding resolution table
 /// Maps channel invocation to its :collect target
+#[derive(Clone)]
 pub struct CollectBindingTable {
     /// Map: source_channel_id → direct jump target
     bindings: HashMap<u32, DirectJumpTarget>,
+    /// Map: collector_channel_id → source_channel_id
+    collector_sources: HashMap<u32, u32>,
 }
 
 impl CollectBindingTable {
@@ -52,6 +67,7 @@ impl CollectBindingTable {
     pub fn new() -> Self {
         CollectBindingTable {
             bindings: HashMap::new(),
+            collector_sources: HashMap::new(),
         }
     }
 
@@ -61,6 +77,7 @@ impl CollectBindingTable {
         &mut self,
         source_channel_id: u32,
         collector_channel_id: u32,
+        parent_channel_id: u32,
         collector_ip: *const u8,
         target_cfp: *mut u8,
         local_resource_offset: i32,
@@ -69,10 +86,21 @@ impl CollectBindingTable {
             return Err(format!("Duplicate collect binding for channel {}", source_channel_id));
         }
 
+        if self.collector_sources.contains_key(&collector_channel_id) {
+            return Err(format!("Duplicate collector channel binding for {}", collector_channel_id));
+        }
+
         self.bindings.insert(
             source_channel_id,
-            DirectJumpTarget::new(collector_ip, collector_channel_id, target_cfp, local_resource_offset),
+            DirectJumpTarget::new(
+                collector_ip,
+                collector_channel_id,
+                parent_channel_id,
+                target_cfp,
+                local_resource_offset,
+            ),
         );
+        self.collector_sources.insert(collector_channel_id, source_channel_id);
 
         Ok(())
     }
@@ -86,6 +114,35 @@ impl CollectBindingTable {
     /// Check if a channel has a collect binding
     pub fn has_binding(&self, source_channel_id: u32) -> bool {
         self.bindings.contains_key(&source_channel_id)
+    }
+
+    /// Resolve the source channel associated with a collector channel.
+    pub fn source_for_collector(&self, collector_channel_id: u32) -> Option<u32> {
+        self.collector_sources.get(&collector_channel_id).copied()
+    }
+
+    /// Resolve the collect boundary that should handle a secondary abort from a collector.
+    pub fn resolve_secondary_abort_binding(&self, collector_channel_id: u32) -> Option<&DirectJumpTarget> {
+        let source_channel_id = self.source_for_collector(collector_channel_id)?;
+        let current_target = self.resolve(source_channel_id)?;
+
+        if !current_target.has_parent_channel() {
+            return None;
+        }
+
+        self.resolve(current_target.parent_channel_id)
+    }
+
+    /// Resolve the parent channel that owns the collect boundary for a collector.
+    pub fn parent_channel_for_collector(&self, collector_channel_id: u32) -> Option<u32> {
+        let source_channel_id = self.source_for_collector(collector_channel_id)?;
+        self.resolve(source_channel_id).and_then(|target| {
+            if target.has_parent_channel() {
+                Some(target.parent_channel_id)
+            } else {
+                None
+            }
+        })
     }
 
     /// Execute direct jump to collector
@@ -102,6 +159,16 @@ impl CollectBindingTable {
     ) -> Result<(), String> {
         let target = self.resolve(source_channel_id)
             .ok_or(format!("No collect binding for channel {}", source_channel_id))?;
+
+        self.execute_jump_to_target(target, rfp)
+    }
+
+    /// Execute the direct jump for a resolved target.
+    unsafe fn execute_jump_to_target(
+        &self,
+        target: &DirectJumpTarget,
+        rfp: *mut u8,
+    ) -> Result<(), String> {
 
         #[cfg(target_arch = "x86_64")]
         {
@@ -136,6 +203,24 @@ impl CollectBindingTable {
                 options(noreturn)
             );
         }
+
+        Ok(())
+    }
+
+    /// Execute a secondary-abort jump using the collector channel identity.
+    ///
+    /// This resolves the collector's parent collect boundary and jumps to that
+    /// parent's collector directly.
+    pub unsafe fn execute_secondary_abort_jump(
+        &self,
+        collector_channel_id: u32,
+        rfp: *mut u8,
+    ) -> Result<(), String> {
+        let target = self
+            .resolve_secondary_abort_binding(collector_channel_id)
+            .ok_or(format!("No parent collect binding for collector channel {}", collector_channel_id))?;
+
+        self.execute_jump_to_target(target, rfp)
     }
 
     /// Get number of registered bindings
@@ -159,6 +244,7 @@ impl CollectBindingTable {
         for (source_id, target) in &self.bindings {
             bytes.extend_from_slice(&source_id.to_le_bytes());
             bytes.extend_from_slice(&target.collector_channel_id.to_le_bytes());
+            bytes.extend_from_slice(&target.parent_channel_id.to_le_bytes());
             bytes.extend_from_slice(&(target.collector_ip as u64).to_le_bytes());
             bytes.extend_from_slice(&(target.target_cfp as u64).to_le_bytes());
             bytes.extend_from_slice(&target.local_resource_offset.to_le_bytes());
@@ -178,7 +264,7 @@ impl CollectBindingTable {
         let mut pos = 4;
 
         for _ in 0..count {
-            if pos + 20 > bytes.len() {
+            if pos + 32 > bytes.len() {
                 return Err("Buffer truncated".to_string());
             }
 
@@ -188,27 +274,31 @@ impl CollectBindingTable {
             let collector_id = u32::from_le_bytes([
                 bytes[pos + 4], bytes[pos + 5], bytes[pos + 6], bytes[pos + 7]
             ]);
+            let parent_channel_id = u32::from_le_bytes([
+                bytes[pos + 8], bytes[pos + 9], bytes[pos + 10], bytes[pos + 11]
+            ]);
             let collector_ip = u64::from_le_bytes([
-                bytes[pos + 8], bytes[pos + 9], bytes[pos + 10], bytes[pos + 11],
-                bytes[pos + 12], bytes[pos + 13], bytes[pos + 14], bytes[pos + 15]
+                bytes[pos + 12], bytes[pos + 13], bytes[pos + 14], bytes[pos + 15],
+                bytes[pos + 16], bytes[pos + 17], bytes[pos + 18], bytes[pos + 19]
             ]) as *const u8;
             let target_cfp = u64::from_le_bytes([
-                bytes[pos + 16], bytes[pos + 17], bytes[pos + 18], bytes[pos + 19],
-                bytes[pos + 20], bytes[pos + 21], bytes[pos + 22], bytes[pos + 23]
+                bytes[pos + 20], bytes[pos + 21], bytes[pos + 22], bytes[pos + 23],
+                bytes[pos + 24], bytes[pos + 25], bytes[pos + 26], bytes[pos + 27]
             ]) as *mut u8;
             let local_resource_offset = i32::from_le_bytes([
-                bytes[pos + 24], bytes[pos + 25], bytes[pos + 26], bytes[pos + 27]
+                bytes[pos + 28], bytes[pos + 29], bytes[pos + 30], bytes[pos + 31]
             ]);
 
             table.register_collect_binding(
                 source_id,
                 collector_id,
+                parent_channel_id,
                 collector_ip,
                 target_cfp,
                 local_resource_offset,
             )?;
 
-            pos += 28;
+            pos += 32;
         }
 
         Ok(table)
@@ -216,15 +306,27 @@ impl CollectBindingTable {
 }
 
 thread_local! {
-    static COLLECT_BINDINGS: CollectBindingTable = CollectBindingTable::new();
+    static COLLECT_BINDINGS: RefCell<CollectBindingTable> = RefCell::new(CollectBindingTable::new());
 }
 
-/// Get or create thread-local collect bindings
-pub fn get_collect_bindings() -> &'static CollectBindingTable {
-    thread_local! {
-        static BINDINGS: CollectBindingTable = CollectBindingTable::new();
-    }
-    COLLECT_BINDINGS.with(|bindings| unsafe { std::mem::transmute::<&CollectBindingTable, &'static CollectBindingTable>(bindings) })
+/// Replace the thread-local collect bindings with the supplied table.
+pub fn set_collect_bindings(table: CollectBindingTable) {
+    COLLECT_BINDINGS.with(|bindings| {
+        *bindings.borrow_mut() = table;
+    });
+}
+
+/// Borrow the thread-local collect bindings and run a closure against them.
+pub fn with_collect_bindings<R>(f: impl FnOnce(&CollectBindingTable) -> R) -> R {
+    COLLECT_BINDINGS.with(|bindings| {
+        let bindings = bindings.borrow();
+        f(&bindings)
+    })
+}
+
+/// Get a cloned snapshot of the thread-local collect bindings.
+pub fn get_collect_bindings() -> CollectBindingTable {
+    COLLECT_BINDINGS.with(|bindings| bindings.borrow().clone())
 }
 
 #[cfg(test)]
@@ -237,6 +339,7 @@ mod tests {
         table.register_collect_binding(
             1,
             2,
+            NO_PARENT_CHANNEL_ID,
             std::ptr::null(),
             std::ptr::null_mut(),
             32,
@@ -251,10 +354,11 @@ mod tests {
         let collector_ip = 0x1000 as *const u8;
         let cfp = 0x2000 as *mut u8;
 
-        table.register_collect_binding(42, 99, collector_ip, cfp, 16).unwrap();
+        table.register_collect_binding(42, 99, 7, collector_ip, cfp, 16).unwrap();
 
         let target = table.resolve(42).expect("resolution failed");
         assert_eq!(target.collector_channel_id, 99);
+        assert_eq!(target.parent_channel_id, 7);
         assert_eq!(target.collector_ip, collector_ip);
         assert_eq!(target.target_cfp, cfp);
         assert_eq!(target.local_resource_offset, 16);
@@ -263,9 +367,9 @@ mod tests {
     #[test]
     fn test_duplicate_binding_rejection() {
         let mut table = CollectBindingTable::new();
-        table.register_collect_binding(1, 2, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
+        table.register_collect_binding(1, 2, NO_PARENT_CHANNEL_ID, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
 
-        let result = table.register_collect_binding(1, 3, std::ptr::null(), std::ptr::null_mut(), 0);
+        let result = table.register_collect_binding(1, 3, NO_PARENT_CHANNEL_ID, std::ptr::null(), std::ptr::null_mut(), 0);
         assert!(result.is_err());
     }
 
@@ -281,7 +385,7 @@ mod tests {
         let mut table = CollectBindingTable::new();
 
         for i in 0..10 {
-            table.register_collect_binding(i, i + 100, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
+            table.register_collect_binding(i, i + 100, NO_PARENT_CHANNEL_ID, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
         }
 
         assert_eq!(table.binding_count(), 10);
@@ -299,6 +403,7 @@ mod tests {
         table1.register_collect_binding(
             10,
             20,
+            0,
             0x1000 as *const u8,
             0x2000 as *mut u8,
             32,
@@ -307,6 +412,7 @@ mod tests {
         table1.register_collect_binding(
             30,
             40,
+            10,
             0x3000 as *const u8,
             0x4000 as *mut u8,
             64,
@@ -324,10 +430,23 @@ mod tests {
     fn test_all_bindings() {
         let mut table = CollectBindingTable::new();
 
-        table.register_collect_binding(1, 10, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
-        table.register_collect_binding(2, 20, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
+        table.register_collect_binding(1, 10, NO_PARENT_CHANNEL_ID, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
+        table.register_collect_binding(2, 20, 1, std::ptr::null(), std::ptr::null_mut(), 0).unwrap();
 
         let all = table.all_bindings();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_secondary_abort_resolution() {
+        let mut table = CollectBindingTable::new();
+
+        table.register_collect_binding(1, 11, 0, 0x1000 as *const u8, 0x2000 as *mut u8, 16).unwrap();
+        table.register_collect_binding(0, 10, NO_PARENT_CHANNEL_ID, 0x3000 as *const u8, 0x4000 as *mut u8, 32).unwrap();
+
+        let target = table.resolve_secondary_abort_binding(11).expect("secondary abort target");
+        assert_eq!(target.collector_channel_id, 10);
+        assert_eq!(target.parent_channel_id, NO_PARENT_CHANNEL_ID);
+        assert_eq!(table.parent_channel_for_collector(11), Some(0));
     }
 }

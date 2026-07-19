@@ -20,7 +20,7 @@ zero-cost exception handling via physical register bindings.
 | **9** | Debugger Integration | `debugger.rs`, `context.rs` | ✓ Complete | 17 |
 | **6** | ABI Layer + Phase 1 Integration | `cfp_rfp.rs`, `shadow_arena.rs`, `sarm.rs`, `gac.rs`, `direct_jump.rs` | ✓ Complete | 36 |
 
-**Total: 21 modules, ~8,000 lines, 161 tests (all passing)**
+**Total: 21 modules, ~8,000 lines, 162 tests (all passing)**
 
 ---
 
@@ -52,7 +52,7 @@ exception handling. Three key architectural principles:
     Direct Jump on Abort
          ↓
 ┌─────────────────────────────────────────┐
-│  RFP Ghost Frame (Collector)            │ ← Resource Frame (abort state)
+│  RFP Ghost Frame (collector side)       │ ← Resource Frame (abort state)
 │  Access locals from aborted execution   │
 └─────────────────────────────────────────┘
 ```
@@ -67,7 +67,7 @@ exception handling. Three key architectural principles:
 |--------|---------|-----------|
 | `pssa.rs` | Virtual memory-based Path-bounded Shadow Stack Arena | `Arena`, `ArenaCheckpoint` |
 | `context.rs` | Execution context with CFP/RFP | `ExecutionContext`, `FramePointer`, `ControlFramePtr`, `ResourceFramePtr` |
-| `abort.rs` | Abort signaling and collector table | `AbortSignal`, `CollectorTable`, `SARMEntry` |
+| `abort.rs` | Abort signaling and collect-boundary table | `AbortSignal`, `CollectorTable`, `SARMEntry` |
 
 **Key Features:**
 - ✅ **mmap-based virtual memory allocation** (true OS page management)
@@ -100,7 +100,7 @@ Phase 2: Commit
 
 Phase 3: Abort
 ├─ Discard shadow buffers (main memory unchanged)
-├─ Execute collector via direct jump
+├─ Jump to the collector entry for the active collect boundary
 └─ O(1) cleanup overhead
 ```
 
@@ -159,7 +159,7 @@ Executable (Ready for Phase 6 runtime)
 | `shadow_arena.rs` | 2PST Phase 1 isolation | `ShadowArena`, `StagedWrite`, `SharedResourceAccess` | 6 |
 | `sarm.rs` | Static Abort Register Map | `SARMTable`, `SARMEntry` | 8 |
 | `gac.rs` | Generational Arena Checkpoint | `LoopFrame` | 8 |
-| `direct_jump.rs` | :collect binding resolution | `CollectBindingTable`, `DirectJumpTarget` | 8 |
+| `direct_jump.rs` | :collect boundary binding resolution | `CollectBindingTable`, `DirectJumpTarget` | 8 |
 
 **✓ Phase 6 + Phase 1 Integration (COMPLETED)**
 
@@ -168,10 +168,10 @@ The `cfp_rfp.rs` module is now fully integrated with Phase 1's `ExecutionContext
 - `abort()` method uses `execute_direct_jump()` for O(1) abort instead of traditional unwinding
 - Thread-local `HYBRID_CONTEXT` tracks CFP/RFP values at runtime
 - New public methods on `ExecutionContext`:
-  - `set_direct_jump_context()`: Configure abort target (CFP, RFP, collector IP)
-  - `clear_direct_jump_context()`: Disable direct jump
-  - `get_hybrid_context()`: Query current CFP/RFP values
-  - `has_direct_jump_context()`: Check if configured
+   - `set_direct_jump_context()`: Configure the abort target for the active collect boundary (CFP, RFP, collector entry IP)
+   - `clear_direct_jump_context()`: Disable direct jump
+   - `get_hybrid_context()`: Query current CFP/RFP values
+   - `has_direct_jump_context()`: Check if configured
 
 **Integration Benefits:**
 - ✓ Zero-cost exception handling (no stack unwinding, no DWARF tables)
@@ -187,7 +187,7 @@ Physical CPU registers for O(1) context switching:
 - **x86-64**: CFP=`rbp`, RFP=`r15`, arena_ptr=`r14`
 - **AArch64**: CFP=`x29`, RFP=`x28`, arena_ptr=`x27`
 
-Abort sequence: `mov rbp, target_cfp; mov r15, rfp; jmp collector_ip` (3 instructions)
+Abort sequence: `mov rbp, target_cfp; mov r15, rfp; jmp collector_entry_ip` (3 instructions)
 
 #### 2. **Shadow Arena (2PST Phase 1)**
 Per-path speculative execution buffers:
@@ -199,7 +199,7 @@ Per-path speculative execution buffers:
 #### 3. **SARM (Static Abort Register Map)**
 Compile-time metadata for register restoration:
 - BTreeMap-based O(log n) lookup
-- Stores: callee-saved register masks, save area offsets, collector IPs
+- Stores: callee-saved register masks, save area offsets, collector entry IPs
 - `.rodata` section at runtime (read-only)
 - Enables deterministic register state after direct jump
 
@@ -210,12 +210,12 @@ Loop memory management with O(1) overhead:
 - Prevents O(iterations × body_size) memory leaks
 - Thread-local stack of active loop frames
 
-#### 5. **Direct Jump (:collect Binding)**
-Compile-time :collect → collector resolution:
+#### 5. **Direct Jump (:collect Boundary Binding)**
+Compile-time :collect boundary → collector entry resolution:
 - Static binding table (HashMap, O(1) lookup)
-- Direct jump targets with CFP, RFP, collector IP
+- Direct jump targets with CFP, RFP, and collector entry IP
 - No dynamic dispatch, no vtable lookup
-- Enables static abort routing from fork paths to collectors
+- Enables static abort routing from collect boundaries to their collectors
 
 ---
 
@@ -245,7 +245,7 @@ cargo run --release --bin seam-vm
 
 ### Run Tests
 ```bash
-# All tests (91 tests, ~100ms)
+# All tests (162 tests, release build)
 cargo test --release --lib
 
 # Specific module
@@ -263,7 +263,7 @@ cargo test --release -- --nocapture
 |-----------|------|-----------|
 | **Abort** | O(1) | 3 MOV + 1 JMP instructions |
 | **Context Switch** | O(1) | Simultaneous CFP/RFP register update |
-| **Collector Lookup** | O(1) | Direct hash table (direct_jump.rs) |
+| **Collect-boundary Lookup** | O(1) | Direct hash table (direct_jump.rs) |
 | **Register Restoration** | O(1) | SARM metadata lookup |
 | **Loop Back-edge** | O(1) | Arena checkpoint rollback |
 | **Fork Path Isolation** | O(1) | Per-path shadow buffer write |
@@ -281,7 +281,7 @@ seam-bootstrap/
     ├─ Phase 1: Memory Management
     ├── pssa.rs                     # Path-bounded Shadow Stack Arena
     ├── context.rs                  # Execution context (CFP/RFP tracking)
-    ├── abort.rs                    # Abort signal and collector table
+    ├── abort.rs                    # Abort signal and collect-boundary table
     │
     ├─ Phase 2: Transaction Engine
     ├── transaction.rs              # 2PST (Two-Phase Static Transaction)
@@ -305,7 +305,7 @@ seam-bootstrap/
     ├── shadow_arena.rs             # 2PST Phase 1 arena isolation
     ├── sarm.rs                     # Static Abort Register Map
     ├── gac.rs                      # Generational Arena Checkpoint
-    ├── direct_jump.rs              # Direct jump :collect binding
+    ├── direct_jump.rs              # Direct jump :collect boundary binding
     │
     └── arch/                       # Architecture-specific intrinsics
         ├── x86_64/mod.rs           # x86-64 register access
@@ -322,14 +322,14 @@ seam-bootstrap/
 - ✓ 2PST: Three-phase transaction (speculative → commit → abort)
 - ✓ SARM: Static abort register map in .rodata
 - ✓ GAC: Generational arena checkpoint for loops
-- ✓ Direct Jump: O(1) :collect → collector path resolution
+- ✓ Direct Jump: O(1) :collect boundary → collector entry resolution
 - ✓ No Stack Unwinding: DWARF-free, zero-cost exception handling
 - ✓ Path Typing: Compile-time resource access verification
 - ✓ Requires Contracts: Automatic synchronization insertion
 - ✓ Fork Semantics: Independent shadow paths with conflict detection
 
 **Metrics:**
-- **Tests Passing**: 92/92 (100%, including Phase 6 + Phase 1 integration test)
+- **Tests Passing**: 162/162 (100%, including Phase 6 + Phase 1 integration test)
 - **Code Coverage**: All critical paths tested
 - **Build Time**: <10 seconds (release profile)
 - **Binary Size**: ~8 MB (release, with debug info stripped)
@@ -363,12 +363,12 @@ seam-bootstrap/
 - Compiler pipeline
 - Code generation
 
-### Phase 6 Tests (36 tests)
+### Phase 6 Tests (37 tests)
 - CFP/RFP context switching (6 tests)
 - Shadow arena isolation (6 tests)
 - SARM registration and lookup (8 tests)
 - GAC loop checkpoints (8 tests)
-- Direct jump binding resolution (8 tests)
+- Direct jump binding resolution (9 tests)
 
 ---
 
@@ -391,9 +391,9 @@ pub struct ExecutionContext {
 
 // Phase 6: Direct jump with physical registers
 pub struct HybridContextSwitch {
-    target_cfp: *mut u8,      // Physical register (rbp/x29)
-    target_rfp: *mut u8,      // Physical register (r15/x28)
-    collector_ip: *const u8,  // Collector entry point
+   target_cfp: *mut u8,      // Physical register (rbp/x29)
+   target_rfp: *mut u8,      // Physical register (r15/x28)
+   collector_entry_ip: *const u8,  // Collector entry point for the active collect boundary
 }
 ```
 
@@ -406,8 +406,8 @@ pub struct HybridContextSwitch {
 4. Phase 1: Update RFP to point to current CFP (ghost frame)
 5. Phase 6: If direct_jump_context configured:
    - execute_direct_jump() performs 3-instruction jump
-   - Direct jump: mov rbp, target_cfp; mov r15, rfp; jmp collector_ip
-6. Collector executes with:
+   - Direct jump: mov rbp, target_cfp; mov r15, rfp; jmp collector_entry_ip
+6. Collector executes at the collector entry with:
    - CFP = new control context
    - RFP = ghost frame (can access aborted locals)
    - No stack unwinding, no DWARF lookup
@@ -419,7 +419,7 @@ pub struct HybridContextSwitch {
 |--------|---------|---------|-------------|
 | **Storage** | Virtual pointers (usize) | Physical registers | Thread-local sync |
 | **Context Switch** | Manual frame pointer updates | Direct jump asm | Combined abort path |
-| **Collector Invocation** | Function pointer call | Direct jump address | Conditional execution |
+| **Collector Entry Invocation** | Function pointer call | Direct jump address | Conditional execution |
 | **Memory Safety** | PSSA arena bounds | Register aliasing | CFP/RFP separation |
 
 ---
@@ -433,7 +433,7 @@ The DRAFT specification requires **O(1) abort** with **no stack unwinding**. Thi
 ### Why Two-Phase Static Transactions?
 - **Phase 1 (Speculative)**: Fork paths run in parallel with shadow buffers (lock-free)
 - **Phase 2 (Commit)**: Compiler determines lock order statically (no deadlock)
-- **Phase 3 (Abort)**: Discard buffers, execute collector via direct jump (no main memory pollution)
+- **Phase 3 (Abort)**: Discard buffers, execute the collector entry via direct jump (no main memory pollution)
 
 This achieves **serializability** without dynamic verification.
 
@@ -500,12 +500,12 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Total: 130 tests (102 baseline + 13 linker + 4 executor + 12 interpreter)
 
 7. ✓ **Direct Jump Integration** (COMPLETED): O(1) abort via direct jump
-   - Implemented PathResult.abort flag, AbortTarget struct for collector configuration
+   - Implemented PathResult.abort flag, AbortTarget struct for collector entry configuration
    - ForkExecutor.phase_dispatch() detects abort and executes direct jump
    - Integration: Phase 1 ExecutionContext.abort(None) + Phase 6 execute_direct_jump()
    - x86-64: 3-instruction sequence (mov rbp, mov r15, jmp)
    - AArch64: 3-instruction sequence (mov x29, mov x28, br)
-   - RFP ghost frame stores aborted context for collector access
+   - RFP ghost frame stores aborted context for collector-side access
    - 7 comprehensive tests: abort flag, target storage, abort detection, state transitions
    - Total: 137 tests (130 + 7 new Phase 7 tests)
    - Zero-cost exception handling: O(1) abort without stack unwinding
@@ -516,7 +516,7 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Thread-local Cell<Option<SignalAbortTarget>> for signal-safe storage
    - Integrated with ExecutionContext: register_signal_handler(), unregister_signal_handler()
    - Signals handled: SIGTERM (Unix), SIGABRT (Unix/Windows), SIGINT (Unix/Windows)
-   - Signal handler executes direct jump: mov CFP, mov RFP, jmp collector_ip (O(1))
+   - Signal handler executes direct jump: mov CFP, mov RFP, jmp collector_entry_ip (O(1))
    - x86-64: Uses rbp (CFP), r15 (RFP) physical registers
    - AArch64: Uses x29 (CFP), x28 (RFP) physical registers
    - 7 comprehensive tests: target creation, thread-local storage, registration, cycles
@@ -532,8 +532,14 @@ Seam uses **direct jump with ghost frame (RFP)**:
    - Modified abort() method to record ghost frame and check breakpoints
    - Zero-cost when disabled: no overhead in execution path
    - 17 comprehensive tests: breakpoint creation, conditions, hit counts, ghost frames, context
-   - Total: 161 tests (144 + 17 new Phase 9 tests)
+   - Total: 162 tests (current total after Phase 9 additions)
    - Full visibility into abort paths: conditional breaks, ghost frame inspection
+
+10. ✓ **Collect Boundary Semantics** (COMPLETED): Clarify collect / collector / parent terminology
+   - Parent channel is recorded as static metadata, not inferred from frame-chain reverse lookup
+   - `:collect` marks the boundary declared at the caller side; a secondary abort is an abort raised inside that boundary and escalates to the parent collect boundary, not to arbitrary downstream paths
+   - `DirectJumpTarget` keeps static binding metadata, while abort dispatch uses separate runtime target data
+   - README and design notes explicitly separate collect boundary, parent boundary, collector entry, and secondary abort semantics
 
 ---
 
@@ -565,7 +571,7 @@ This README documents the full architecture. For specific questions:
 
 See `DRAFT.md` for the complete Seam VM architecture specification including:
 - Path Typing semantics
-- Entry/Collector call patterns
+- Entry / collect boundary / collector entry call patterns
 - 2PST (Two-Phase Static Transaction) model
 - OS boundary crossing strategies
 - Memory safety guarantees

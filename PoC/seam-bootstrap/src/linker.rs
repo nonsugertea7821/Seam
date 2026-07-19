@@ -56,14 +56,21 @@ pub struct AbortTarget {
     pub target_cfp: *mut u8,      // Control Frame Pointer
     pub target_rfp: *mut u8,      // Resource Frame Pointer (ghost frame)
     pub collector_ip: *const u8,  // Collector entry point
+    pub collector_channel_id: u32, // Collector channel identity for parent resolution
 }
 
 impl AbortTarget {
-    pub fn new(target_cfp: *mut u8, target_rfp: *mut u8, collector_ip: *const u8) -> Self {
+    pub fn new(
+        target_cfp: *mut u8,
+        target_rfp: *mut u8,
+        collector_ip: *const u8,
+        collector_channel_id: u32,
+    ) -> Self {
         AbortTarget {
             target_cfp,
             target_rfp,
             collector_ip,
+            collector_channel_id,
         }
     }
 }
@@ -526,6 +533,7 @@ impl ForkExecutor {
                         abort_target.target_cfp,
                         current_cfp,  // RFP = ghost frame (aborted context)
                         abort_target.collector_ip,
+                        abort_target.collector_channel_id,
                     );
                     
                     // Execute O(1) direct jump to collector
@@ -1028,10 +1036,11 @@ mod tests {
         let target_rfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x1000) };
         let collector_ip = unsafe { std::mem::transmute::<u64, *const u8>(0x2000) };
         
-        let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip);
+        let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip, 42);
         assert_eq!(abort_target.target_cfp, target_cfp);
         assert_eq!(abort_target.target_rfp, target_rfp);
         assert_eq!(abort_target.collector_ip, collector_ip);
+        assert_eq!(abort_target.collector_channel_id, 42);
     }
 
     #[test]
@@ -1073,7 +1082,7 @@ mod tests {
         let target_rfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x4000) };
         let collector_ip = unsafe { std::mem::transmute::<u64, *const u8>(0x5000) };
         
-        let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip);
+        let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip, 99);
         linked.set_abort_target(abort_target);
         
         assert!(linked.abort_target.is_some());

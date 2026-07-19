@@ -10,6 +10,7 @@
 
 use crate::pssa::Arena;
 use crate::cfp_rfp::{HybridContextSwitch, set_hybrid_context, get_hybrid_context};
+use crate::direct_jump;
 use crate::debugger::DebuggerContext;
 use std::sync::Arc;
 
@@ -185,11 +186,7 @@ impl ExecutionContext {
     /// - x86-64: mov rbp, target_cfp; mov r15, target_rfp; jmp collector_ip
     /// - AArch64: mov x29, target_cfp; mov x28, target_rfp; br collector_ip
     pub fn abort(&mut self, collector_ptr: Option<unsafe extern "C" fn(ResourceFramePtr)>) -> Result<(), &'static str> {
-        if self.in_collector {
-            // Secondary abort - escalate to parent
-            return Err("Secondary abort detected - escalating to parent collector");
-        }
-
+        let was_in_collector = self.in_collector;
         self.in_collector = true;
         self.rfp = ResourceFramePtr(self.cfp.0);
         
@@ -203,9 +200,30 @@ impl ExecutionContext {
         // Update thread-local hybrid context for Phase 6 direct jump
         set_hybrid_context(self.cfp.0, self.rfp.0);
 
-        // Phase 6 Integration: Use direct jump if configured
+        if was_in_collector && self.direct_jump_context.is_none() {
+            self.in_collector = false;
+            return Err("Secondary abort detected - no direct jump context configured");
+        }
+
         if let Some(ref direct_jump) = self.direct_jump_context {
             unsafe {
+                if was_in_collector {
+                    let secondary_jump_result = direct_jump::with_collect_bindings(|bindings| {
+                        bindings.execute_secondary_abort_jump(
+                            direct_jump.get_collector_channel_id(),
+                            self.rfp.0 as *mut u8,
+                        )
+                    });
+
+                    if let Err(err) = secondary_jump_result {
+                        self.in_collector = false;
+                        let _ = err;
+                        return Err("Secondary abort detected - escalating to parent collector failed");
+                    }
+
+                    unreachable!("secondary abort jump does not return");
+                }
+
                 // O(1) abort with direct jump (no stack unwinding)
                 direct_jump.execute_direct_jump();
                 // This never returns (noreturn assembly)
@@ -248,8 +266,20 @@ impl ExecutionContext {
     /// - target_cfp: New control frame (where collector executes)
     /// - target_rfp: Ghost frame (aborted context for cleanup access)
     /// - collector_ip: Entry point of collector function
-    pub fn set_direct_jump_context(&mut self, target_cfp: *mut u8, target_rfp: *mut u8, collector_ip: *const u8) {
-        self.direct_jump_context = Some(HybridContextSwitch::new(target_cfp, target_rfp, collector_ip));
+    /// - collector_channel_id: Collector channel identity for parent-boundary resolution
+    pub fn set_direct_jump_context(
+        &mut self,
+        target_cfp: *mut u8,
+        target_rfp: *mut u8,
+        collector_ip: *const u8,
+        collector_channel_id: u32,
+    ) {
+        self.direct_jump_context = Some(HybridContextSwitch::new(
+            target_cfp,
+            target_rfp,
+            collector_ip,
+            collector_channel_id,
+        ));
         // Update thread-local hybrid context
         set_hybrid_context(target_cfp as usize, target_rfp as usize);
     }
@@ -308,6 +338,7 @@ impl ExecutionContext {
         if let Some(ref direct_jump) = self.direct_jump_context {
             let abort_target = SignalAbortTarget::new(
                 direct_jump.get_collector_ip(),
+                direct_jump.get_collector_channel_id(),
                 direct_jump.get_target_cfp(),
                 direct_jump.get_target_rfp(),
             );
@@ -343,7 +374,7 @@ mod tests {
         let target_rfp = 0x20000 as *mut u8;
         let collector_ip = 0x30000 as *const u8;
         
-        ctx.set_direct_jump_context(target_cfp, target_rfp, collector_ip);
+        ctx.set_direct_jump_context(target_cfp, target_rfp, collector_ip, 7);
         assert!(ctx.has_direct_jump_context());
         
         // Verify hybrid context is updated

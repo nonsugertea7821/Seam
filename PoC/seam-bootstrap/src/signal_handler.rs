@@ -19,6 +19,8 @@
 pub struct SignalAbortTarget {
     /// Memory address where abort should jump to (collector IP)
     pub collector_ip: *const u8,
+    /// Collector channel identity used for boundary resolution
+    pub collector_channel_id: u32,
     /// Target control frame pointer
     pub target_cfp: *mut u8,
     /// Target resource frame pointer (ghost frame)
@@ -26,9 +28,15 @@ pub struct SignalAbortTarget {
 }
 
 impl SignalAbortTarget {
-    pub fn new(collector_ip: *const u8, target_cfp: *mut u8, target_rfp: *mut u8) -> Self {
+    pub fn new(
+        collector_ip: *const u8,
+        collector_channel_id: u32,
+        target_cfp: *mut u8,
+        target_rfp: *mut u8,
+    ) -> Self {
         SignalAbortTarget {
             collector_ip,
+            collector_channel_id,
             target_cfp,
             target_rfp,
         }
@@ -221,13 +229,10 @@ mod tests {
 
     #[test]
     fn test_signal_abort_target_creation() {
-        let target = SignalAbortTarget::new(
-            0x1000 as *const u8,
-            0x2000 as *mut u8,
-            0x3000 as *mut u8,
-        );
+        let target = SignalAbortTarget::new(0x1000 as *const u8, 7, 0x2000 as *mut u8, 0x3000 as *mut u8);
         
         assert_eq!(target.collector_ip, 0x1000 as *const u8);
+        assert_eq!(target.collector_channel_id, 7);
         assert_eq!(target.target_cfp, 0x2000 as *mut u8);
         assert_eq!(target.target_rfp, 0x3000 as *mut u8);
         assert!(target.is_valid());
@@ -235,11 +240,7 @@ mod tests {
 
     #[test]
     fn test_signal_abort_target_invalid() {
-        let target = SignalAbortTarget::new(
-            std::ptr::null(),
-            0x2000 as *mut u8,
-            0x3000 as *mut u8,
-        );
+        let target = SignalAbortTarget::new(std::ptr::null(), 7, 0x2000 as *mut u8, 0x3000 as *mut u8);
         
         assert!(!target.is_valid());
     }
@@ -251,11 +252,7 @@ mod tests {
         assert!(SignalHandler::get_abort_target().is_none());
         
         // Set a target
-        let target = SignalAbortTarget::new(
-            0x1000 as *const u8,
-            0x2000 as *mut u8,
-            0x3000 as *mut u8,
-        );
+        let target = SignalAbortTarget::new(0x1000 as *const u8, 7, 0x2000 as *mut u8, 0x3000 as *mut u8);
         SignalHandler::set_abort_target(target.clone());
         
         // Verify retrieval
@@ -263,6 +260,7 @@ mod tests {
         assert!(retrieved.is_some());
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.collector_ip, target.collector_ip);
+        assert_eq!(retrieved.collector_channel_id, target.collector_channel_id);
         assert_eq!(retrieved.target_cfp, target.target_cfp);
         assert_eq!(retrieved.target_rfp, target.target_rfp);
         
@@ -273,15 +271,12 @@ mod tests {
 
     #[test]
     fn test_signal_abort_target_clone() {
-        let target1 = SignalAbortTarget::new(
-            0x1000 as *const u8,
-            0x2000 as *mut u8,
-            0x3000 as *mut u8,
-        );
+        let target1 = SignalAbortTarget::new(0x1000 as *const u8, 7, 0x2000 as *mut u8, 0x3000 as *mut u8);
         
         let target2 = target1.clone();
         
         assert_eq!(target1.collector_ip, target2.collector_ip);
+        assert_eq!(target1.collector_channel_id, target2.collector_channel_id);
         assert_eq!(target1.target_cfp, target2.target_cfp);
         assert_eq!(target1.target_rfp, target2.target_rfp);
     }
