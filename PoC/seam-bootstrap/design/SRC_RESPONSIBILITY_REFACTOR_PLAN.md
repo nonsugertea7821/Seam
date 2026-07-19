@@ -127,6 +127,20 @@ Rationale:
 - In `src/execution/linker.rs`, isolate phase execution state machine from pseudo-code interpreter glue.
 - Introduce internal submodules: `phases`, `interpreter_bridge`, `result_aggregation`.
 
+Progress (this iteration):
+- Added `src/execution/linker/phases.rs`
+  - Moved phase state machine operations (`phase_setup`, `phase_dispatch`,
+    `phase_barriers`, `phase_collect`, `phase_join`) out of `linker.rs` method bodies.
+- Added `src/execution/linker/interpreter_bridge.rs`
+  - Moved pseudo-code parsing/execution and access tracking
+    (`Instruction`, `CodeInterpreter`, `ResourceAccessTracker`).
+- Added `src/execution/linker/result_aggregation.rs`
+  - Moved result accumulation/finalization from execution state into
+    dedicated aggregation helpers.
+- Updated `src/execution/linker.rs`
+  - `ForkExecutor` now orchestrates and delegates to submodules.
+  - Existing public API and tests remain source-compatible.
+
 3. Boundary enforcement
 - Add `pub(crate)` where external visibility is not required.
 - Reduce direct cross-domain imports (compile -> runtime should be metadata-only where possible).

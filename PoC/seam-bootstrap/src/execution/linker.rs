@@ -18,6 +18,15 @@ use crate::context::ExecutionContext;
 use crate::sync::MemoryBarrier;
 use std::collections::BTreeMap;
 
+#[path = "linker/phases.rs"]
+mod phases;
+#[path = "linker/interpreter_bridge.rs"]
+mod interpreter_bridge;
+#[path = "linker/result_aggregation.rs"]
+mod result_aggregation;
+
+pub use interpreter_bridge::{CodeInterpreter, Instruction, ResourceAccessTracker};
+
 /// Result of a path execution (Status only, NOT data carrier)
 #[derive(Debug, Clone)]
 pub struct PathResult {
@@ -227,175 +236,6 @@ impl ForkExecutionResult {
     }
 }
 
-/// Phase 5C: CodeInterpreter — Execute pseudo-code from CompiledFork
-///
-/// Responsibilities:
-/// 1. Deserialize and parse pseudo-code strings
-/// 2. Execute path instructions
-/// 3. Track resource access (read/write)
-/// 4. Generate execution results
-pub struct CodeInterpreter;
-
-/// Instruction parsed from pseudo-code
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Instruction {
-    ReadResource(u32),     // Read from resource ID
-    WriteResource(u32),    // Write to resource ID
-    ReadWriteResource(u32), // Read-write to resource ID
-    Barrier,               // Memory barrier
-    Success,               // Mark path as successful
-    Abort,                 // Abort execution
-}
-
-impl CodeInterpreter {
-    /// Parse pseudo-code string into instructions
-    ///
-    /// Simple format:
-    /// - "read N" → ReadResource(N)
-    /// - "write N" → WriteResource(N)
-    /// - "readwrite N" → ReadWriteResource(N)
-    /// - "barrier" → Barrier
-    /// - "success" → Success
-    /// - "abort" → Abort
-    pub fn parse(code: &str) -> Vec<Instruction> {
-        let mut instructions = Vec::new();
-
-        for line in code.lines() {
-            let trimmed = line.trim();
-
-            // Skip empty lines and comments
-            if trimmed.is_empty() || trimmed.starts_with("//") {
-                continue;
-            }
-
-            // Parse instruction
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.is_empty() {
-                continue;
-            }
-
-            match parts[0] {
-                "read" => {
-                    if parts.len() > 1 {
-                        if let Ok(id) = parts[1].parse::<u32>() {
-                            instructions.push(Instruction::ReadResource(id));
-                        }
-                    }
-                }
-                "write" => {
-                    if parts.len() > 1 {
-                        if let Ok(id) = parts[1].parse::<u32>() {
-                            instructions.push(Instruction::WriteResource(id));
-                        }
-                    }
-                }
-                "readwrite" => {
-                    if parts.len() > 1 {
-                        if let Ok(id) = parts[1].parse::<u32>() {
-                            instructions.push(Instruction::ReadWriteResource(id));
-                        }
-                    }
-                }
-                "barrier" => {
-                    instructions.push(Instruction::Barrier);
-                }
-                "success" => {
-                    instructions.push(Instruction::Success);
-                }
-                "abort" => {
-                    instructions.push(Instruction::Abort);
-                }
-                _ => {
-                    // Unknown instruction, skip
-                }
-            }
-        }
-
-        instructions
-    }
-
-    /// Execute parsed instructions for a single path
-    ///
-    /// Returns PathResult with execution status and accessed resources
-    pub fn execute(
-        path_id: u32,
-        resource_id: ResourceId,
-        instructions: &[Instruction],
-    ) -> PathResult {
-        let mut result = PathResult::new(path_id, resource_id);
-        let mut aborted = false;
-
-        for instruction in instructions {
-            match instruction {
-                Instruction::ReadResource(_) => {
-                    // Track read access
-                    // In real implementation: update resource frame
-                }
-                Instruction::WriteResource(_) => {
-                    // Track write access
-                    // In real implementation: update resource frame
-                }
-                Instruction::ReadWriteResource(_) => {
-                    // Track read-write access
-                    // In real implementation: update resource frame
-                }
-                Instruction::Barrier => {
-                    // Execute memory fence
-                    std::sync::atomic::fence(std::sync::atomic::Ordering::Release);
-                }
-                Instruction::Success => {
-                    result = result.success();
-                }
-                Instruction::Abort => {
-                    aborted = true;
-                    result = result.abort();  // Phase 7: Mark as aborted
-                    break;
-                }
-            }
-        }
-
-        // If no success instruction, mark as failure (unless aborted)
-        if !result.success && !aborted {
-            result = result.success(); // Default to success for placeholder
-        }
-
-        result
-    }
-}
-
-/// Resource access tracker for path execution
-#[derive(Debug, Clone)]
-pub struct ResourceAccessTracker {
-    pub path_id: u32,
-    pub reads: Vec<u32>,
-    pub writes: Vec<u32>,
-}
-
-impl ResourceAccessTracker {
-    pub fn new(path_id: u32) -> Self {
-        ResourceAccessTracker {
-            path_id,
-            reads: Vec::new(),
-            writes: Vec::new(),
-        }
-    }
-
-    pub fn record_read(&mut self, resource_id: u32) {
-        if !self.reads.contains(&resource_id) {
-            self.reads.push(resource_id);
-        }
-    }
-
-    pub fn record_write(&mut self, resource_id: u32) {
-        if !self.writes.contains(&resource_id) {
-            self.writes.push(resource_id);
-        }
-    }
-
-    pub fn total_accesses(&self) -> usize {
-        self.reads.len() + self.writes.len()
-    }
-}
 ///
 /// Responsibilities:
 /// 1. Execute LinkedFork from Phase 5 linker
@@ -462,9 +302,6 @@ impl ForkExecutor {
     /// 4. Collect: Gather results from all paths
     /// 5. Join: Synchronize paths at join point
     pub fn execute(&mut self, context: &mut ExecutionContext) -> Result<ForkExecutionResult, String> {
-        let mut result =
-            ForkExecutionResult::new(self.linked.fork_id(), self.linked.num_paths());
-
         // Phase 1: Setup - Allocate execution frames
         self.phase_setup(context)?;
 
@@ -480,25 +317,12 @@ impl ForkExecutor {
         // Phase 5: Join - Synchronize paths at join point
         self.phase_join(context)?;
 
-        // Build final result from execution state
-        for path_result in &self.execution_state.path_results {
-            result.add_result(path_result.clone());
-        }
-
-        Ok(result)
+        Ok(result_aggregation::finalize(&self.linked, &self.execution_state))
     }
 
     /// Phase 1: Setup - Allocate frames for each path
     fn phase_setup(&mut self, context: &mut ExecutionContext) -> Result<(), String> {
-        // Allocate frame in arena for each path
-        for path_state in self.linked.path_states() {
-            // Each path needs a frame for local variables and state
-            // Frame size: 256 bytes (typical, can be tuned)
-            context.frame_push(256).map_err(|e| format!("Setup failed: {}", e))?;
-        }
-
-        self.execution_state.setup_done = true;
-        Ok(())
+        phases::phase_setup(&self.linked, &mut self.execution_state, context)
     }
 
     /// Phase 2: Dispatch - Schedule paths to execution engine
@@ -506,49 +330,7 @@ impl ForkExecutor {
     /// Executes pseudo-code for each path using CodeInterpreter (Phase 5C).
     /// Phase 7: If abort detected, executes direct jump to collector.
     fn phase_dispatch(&mut self, context: &mut ExecutionContext) -> Result<(), String> {
-        // Phase 5C: Execute pseudo-code for each path
-        for path_state in self.linked.path_states() {
-            // Parse pseudo-code from LinkedFork
-            let instructions = if let Some(ref code) = self.linked.generated_code {
-                CodeInterpreter::parse(code)
-            } else {
-                Vec::new()
-            };
-
-            // Execute instructions and collect result
-            let result = CodeInterpreter::execute(
-                path_state.path_id(),
-                path_state.resource_id(),
-                &instructions,
-            );
-
-            // Phase 7: If abort detected and abort_target configured, execute direct jump
-            if result.aborted {
-                if let Some(ref abort_target) = self.linked.abort_target {
-                    // Set CFP to current frame pointer (for cleanup)
-                    let current_cfp = context.cfp().0 as *mut u8;
-                    
-                    // Set direct_jump_context with abort target
-                    context.set_direct_jump_context(
-                        abort_target.target_cfp,
-                        current_cfp,  // RFP = ghost frame (aborted context)
-                        abort_target.collector_ip,
-                        abort_target.collector_channel_id,
-                    );
-                    
-                    // Execute O(1) direct jump to collector
-                    // abort() with direct_jump_context configured will execute the jump
-                    let _ = context.abort(None).map_err(|e| format!("Abort failed: {}", e));
-                    // Note: abort() doesn't return if direct_jump_context is configured
-                    // so this return is unreachable code in normal execution
-                }
-            }
-
-            self.execution_state.path_results.push(result);
-        }
-
-        self.execution_state.dispatch_done = true;
-        Ok(())
+        phases::phase_dispatch(&self.linked, &mut self.execution_state, context)
     }
 
     /// Phase 3: Barriers - Execute synchronization barriers
@@ -556,13 +338,7 @@ impl ForkExecutor {
     /// Executes all memory barriers generated by Phase 3 (AutoSync).
     /// Barriers coordinate access patterns across paths.
     fn phase_barriers(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
-        // Execute each barrier
-        for barrier in self.linked.barriers() {
-            barrier.execute();
-        }
-
-        self.execution_state.barriers_done = true;
-        Ok(())
+        phases::phase_barriers(&self.linked, &mut self.execution_state)
     }
 
     /// Phase 4: Collect - Gather results from path execution
@@ -570,15 +346,7 @@ impl ForkExecutor {
     /// Aggregates status and metadata from all executed paths.
     /// In a real implementation, would coordinate with scheduler.
     fn phase_collect(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
-        // Results already collected in phase_dispatch for prototype
-        // Real implementation would:
-        // 1. Wait for all paths to complete
-        // 2. Gather status from each path
-        // 3. Check for abort conditions (via RFP/direct_jump_context)
-        // 4. Accumulate results
-
-        self.execution_state.collect_done = true;
-        Ok(())
+        phases::phase_collect(&mut self.execution_state)
     }
 
     /// Phase 5: Join - Synchronize paths at join point
@@ -586,17 +354,7 @@ impl ForkExecutor {
     /// Ensures all paths have completed before returning to caller.
     /// Verifies synchronization invariants.
     fn phase_join(&mut self, _context: &mut ExecutionContext) -> Result<(), String> {
-        // Verify all paths completed
-        if self.execution_state.path_results.len() as u32 != self.linked.num_paths() {
-            return Err(format!(
-                "Join failed: {} paths out of {} completed",
-                self.execution_state.path_results.len(),
-                self.linked.num_paths()
-            ));
-        }
-
-        self.execution_state.join_done = true;
-        Ok(())
+        phases::phase_join(&self.linked, &mut self.execution_state)
     }
 }
 
