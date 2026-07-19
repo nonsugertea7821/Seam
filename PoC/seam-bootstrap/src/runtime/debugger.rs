@@ -210,6 +210,21 @@ impl DebuggerContext {
         false
     }
 
+    /// Record abort-time ghost frame snapshot from raw frame pointers.
+    pub fn record_abort_ghost_frame(&mut self, rfp: usize, cfp: usize, resource_id: u32, phase: u32) {
+        self.record_ghost_frame(GhostFrameSnapshot::new(rfp, cfp, resource_id, phase));
+    }
+
+    /// Check whether a breakpoint should trigger at abort entry.
+    pub fn should_break_on_abort(&mut self, resource_id: u32) -> bool {
+        self.should_break_at(BreakpointLocation::OnAbort, resource_id)
+    }
+
+    /// Check whether a breakpoint should trigger at collector entry.
+    pub fn should_break_on_collector_entry(&mut self, resource_id: u32) -> bool {
+        self.should_break_at(BreakpointLocation::OnCollectorEntry, resource_id)
+    }
+
     /// Record ghost frame snapshot
     pub fn record_ghost_frame(&mut self, snapshot: GhostFrameSnapshot) {
         self.last_ghost_frame = Some(snapshot);

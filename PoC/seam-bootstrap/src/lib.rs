@@ -51,8 +51,6 @@ pub mod direct_jump;
 pub mod signal_handler;
 #[path = "runtime/debugger.rs"]
 pub mod debugger;
-#[path = "runtime/context_debug.rs"]
-mod context_debug;
 
 /// Logical package split for runtime-centric types and services.
 pub mod runtime {
