@@ -42,6 +42,149 @@ The following is the stable conceptual surface used across this repository.
    - `requires { read/write ... }` contracts model resource access
    - Intended for compile-time conflict analysis and safe concurrency planning
 
+## Concepts by Example
+
+The snippet below is intentionally small. It shows the relationship between
+normal execution (`entry`), failure (`abort`), and recovery (`collector`).
+
+```seam
+channel Transfer {
+  requires {
+    read  { Account.balance; }
+    write { Ledger.entries; }
+  }
+
+  bool entry(TransferRequest req) {
+    if (req.amount <= 0) {
+      abort;
+    }
+
+    // Child call with collector binding
+    PersistLedger(req) :collect Transfer;
+    return true;
+  }
+
+  bool collector {
+    // Recovery path for this channel boundary
+    // (rollback, cleanup, or fallback)
+    return false;
+  }
+}
+```
+
+How to read this:
+
+1. `entry` is the main path.
+2. `abort` indicates that the current path cannot continue safely.
+3. `:collect Transfer` pre-binds which collector should handle failure in that call subtree.
+4. Recovery is explicit and part of the channel contract surface.
+
+## Concrete Runtime Walkthrough
+
+This is the practical flow the PoC is designed to demonstrate.
+
+1. Channel invocation allocates frame space in PSSA via bump allocation.
+2. Execution continues on the `entry` path.
+3. If a failure path triggers, VM marks the aborted context as resource-frame state (RFP).
+4. Instead of unwinding stack frames, VM performs direct control transfer to the collector boundary.
+5. Collector executes recovery logic using deterministic frame metadata.
+6. Forked paths can stage writes and then commit through 2PST order, or discard on abort.
+
+### Abort and :collect Flow (Primary Abort)
+
+The diagram below describes the intended call-boundary model used in this repository.
+The key point is that `:collect` is a boundary binding at the parent callsite, not dynamic handler search.
+
+```mermaid
+flowchart TD
+  A[Parent channel entry] --> B[Call Child with :collect Recovery]
+  B --> C[Child subtree executes]
+  C --> D{Abort occurs in Child subtree?}
+  D -- No --> E[Normal return to parent next step]
+  D -- Yes --> F[Freeze aborted frame as RFP ghost context]
+  F --> G[Resolve statically bound collect target]
+  G --> H[Direct jump to collector boundary]
+  H --> I[Run collector recovery path]
+  I --> J{Collector returns or aborts?}
+  J -- returns --> K[Continue from parent boundary next step]
+  J -- aborts --> L[Secondary abort path]
+```
+
+### Secondary Abort Escalation
+
+Secondary abort means abort triggered while already inside collector execution.
+In this model, VM does not recurse into the same collector boundary.
+It escalates to the parent collect boundary.
+
+Important interpretation note:
+This is not a try/catch-style dynamic exception model.
+Collector resolution is treated as a statically bound call-boundary contract,
+and secondary abort handling is modeled as escalation to the next parent boundary.
+
+```mermaid
+flowchart TD
+  A[Collector starts] --> B[IC flag set to 1]
+  B --> C{Abort inside collector?}
+  C -- No --> D[Collector completes]
+  D --> E[IC flag cleared]
+  C -- Yes --> F[Secondary abort detected]
+  F --> G[Resolve parent collect boundary]
+  G --> H{Parent boundary exists?}
+  H -- Yes --> I[Direct jump to parent collector boundary]
+  H -- No --> J[Terminate or unrecoverable path]
+```
+
+### Child-GrandChild :collect Binding Example
+
+This example clarifies exactly where `:collect` is effective in a three-level call chain.
+
+```mermaid
+flowchart TD
+  P[Parent.entry] --> C1[Parent calls Child :collect GrandChild]
+  C1 --> C2[Child.entry executes]
+  C2 --> G1[Child calls GrandChild.entry]
+  G1 --> G2{GrandChild aborts?}
+  G2 -- No --> G3[GrandChild returns to Child]
+  G3 --> C3[Child continues normal path]
+  G2 -- Yes --> J1[VM jumps to Parent call boundary
+bound by :collect GrandChild]
+  J1 --> J2[GrandChild.collector runs]
+  J2 --> J3{Collector returns or aborts?}
+  J3 -- returns --> P2[Resume at Parent next instruction
+after Child callsite]
+  J3 -- aborts --> P3[Secondary abort escalation to parent boundary]
+```
+
+Binding rule in this example:
+
+1. `:collect GrandChild` is bound at the Parent -> Child callsite.
+2. The binding governs aborts from the execution subtree under that callsite.
+3. If `GrandChild` aborts inside that subtree, recovery is resolved at the bound parent boundary.
+4. If collector returns, execution resumes at Parent's next instruction after the bound callsite.
+
+Implementation notes for this behavior are visible in:
+
+- [PoC/seam-bootstrap/src/context.rs](PoC/seam-bootstrap/src/context.rs)
+- [PoC/seam-bootstrap/src/direct_jump.rs](PoC/seam-bootstrap/src/direct_jump.rs)
+
+Related implementation modules:
+
+- [PoC/seam-bootstrap/src/pssa.rs](PoC/seam-bootstrap/src/pssa.rs)
+- [PoC/seam-bootstrap/src/context.rs](PoC/seam-bootstrap/src/context.rs)
+- [PoC/seam-bootstrap/src/direct_jump.rs](PoC/seam-bootstrap/src/direct_jump.rs)
+- [PoC/seam-bootstrap/src/transaction.rs](PoC/seam-bootstrap/src/transaction.rs)
+- [PoC/seam-bootstrap/src/shadow_arena.rs](PoC/seam-bootstrap/src/shadow_arena.rs)
+
+## Quick Glossary
+
+- **Path Typing**: static verification of control-flow behavior, not only value types.
+- **Channel**: execution unit with `entry` and optional recovery via `collector`.
+- **Collector**: recovery path bound to a call boundary.
+- **PSSA**: thread-local arena used as path-bounded execution memory.
+- **CFP/RFP**: split pointers for control context and aborted-resource context.
+- **Direct Jump Abort**: O(1)-style transfer to collector boundary, avoiding stack unwinding.
+- **2PST**: speculative writes first, deterministic commit later.
+
 ## Architecture Direction
 
 Seam design and PoC implementation focus on the following VM-level ideas:
@@ -143,5 +286,6 @@ At this stage, this project should be read as:
 
 ## License
 
-No license file is currently defined at repository root.
-Please add a license before external distribution.
+This project is licensed under the MIT License.
+
+- [LICENSE](LICENSE)

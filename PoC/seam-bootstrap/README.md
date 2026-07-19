@@ -588,4 +588,6 @@ This PoC focuses on demonstrating core VM mechanics. Production implementation w
 
 ## License
 
-This is a research prototype for the Axiomium Seam project.
+This is a research prototype for the Seam project.
+
+License: MIT (see LICENSE file for details)
