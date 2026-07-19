@@ -6,22 +6,8 @@
 //! - Static Abort Register Map (SARM)
 
 use crate::context::ResourceFramePtr;
+use crate::sarm::SARMEntry;
 use std::collections::HashMap;
-
-/// Static Abort Register Map entry
-/// Maintains register state and abort metadata
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct SARMEntry {
-    /// Abort channel identifier
-    pub abort_channel_id: u32,
-    /// Bitmask of callee-saved registers to restore
-    pub callee_saved_mask: u32,
-    /// Offset from RFP to saved register area
-    pub rfp_offset_to_saved: i32,
-    /// Jump target collector instruction pointer
-    pub collector_target_ip: *const u8,
-}
 
 /// Abort signal definition
 #[repr(u8)]

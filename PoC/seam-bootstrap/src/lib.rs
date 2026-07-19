@@ -30,6 +30,40 @@ pub mod direct_jump;
 pub mod signal_handler;
 pub mod debugger;
 
+/// Logical package split for runtime-centric types and services.
+pub mod runtime {
+    pub use crate::abort::{AbortContext, AbortSignal, CollectorFn, CollectorTable};
+    pub use crate::cfp_rfp::{HybridContextSwitch, PhysicalRegisters};
+    pub use crate::context::{ControlFramePtr, ExecutionContext, FrameLayout, FramePointer, ResourceFramePtr};
+    pub use crate::debugger::{Breakpoint, BreakpointCondition, BreakpointLocation, DebuggerContext, GhostFrameSnapshot};
+    pub use crate::direct_jump::{CollectBindingTable, DirectJumpTarget};
+    pub use crate::gac::LoopFrame;
+    pub use crate::pssa::Arena;
+    pub use crate::sarm::{SARMEntry, SARMTable};
+    pub use crate::shadow_arena::{ShadowArena, ShadowBuffer as ShadowBufferArena};
+    pub use crate::signal_handler::{SignalAbortTarget, SignalHandler};
+}
+
+/// Logical package split for static analysis and compilation pipeline.
+pub mod compile {
+    pub use crate::ast::{AccessSpec, AccessType, CompiledFork, ForkExpr, ForkPath as AstForkPath, RequiresClause, ResourceId};
+    pub use crate::codegen::{CodeGenerator, GeneratedCode};
+    pub use crate::compiler::{CompileAnalysis, CompileError, CompileResult, SeamCompiler};
+    pub use crate::contract::{ContractChecker, RequirementLevel, RequiresContract, ResourceRequirement};
+    pub use crate::effect::{Effect, EffectAnalysis, EffectSet, EffectType};
+}
+
+/// Logical package split for fork execution, transactions, and synchronization.
+pub mod execution {
+    pub use crate::channel::Channel;
+    pub use crate::fork::{ForkContext, ForkGraph, ForkPath};
+    pub use crate::linker::{AbortTarget, CodeInterpreter, ForkExecutionResult, ForkExecutor, Instruction, LinkedFork, PathResult, PathState, ResourceAccessTracker, RuntimeLinker};
+    pub use crate::resource::{AccessSet, GlobalResource, ResourceAccess, UniqueRecord};
+    pub use crate::shadow_buffer::ShadowBuffer;
+    pub use crate::sync::{AutoSync, BarrierKind, MemoryBarrier, SyncKind, SyncPoint};
+    pub use crate::transaction::{Transaction, TransactionManager, TransactionState};
+}
+
 #[cfg(target_arch = "x86_64")]
 pub mod arch {
     pub mod x86_64;
