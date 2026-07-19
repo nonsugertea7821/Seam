@@ -9,7 +9,7 @@
 //! RFP (Resource Frame Pointer) - aborted ghost frame for cleanup (physical register: r15/x28)
 
 use crate::pssa::Arena;
-use crate::cfp_rfp::{HybridContextSwitch, set_hybrid_context, get_hybrid_context};
+use crate::cfp_rfp::{HybridContextSwitch, set_hybrid_context};
 use crate::direct_jump;
 use crate::debugger::DebuggerContext;
 use std::sync::Arc;
@@ -193,34 +193,13 @@ impl ExecutionContext {
         // Update thread-local hybrid context for Phase 6 direct jump
         set_hybrid_context(self.cfp.0, self.rfp.0);
 
-        if was_in_collector && self.direct_jump_context.is_none() {
+        if let Err(err) = direct_jump::execute_context_abort_jump(
+            &self.direct_jump_context,
+            was_in_collector,
+            self.rfp.0,
+        ) {
             self.in_collector = false;
-            return Err("Secondary abort detected - no direct jump context configured");
-        }
-
-        if let Some(ref direct_jump) = self.direct_jump_context {
-            unsafe {
-                if was_in_collector {
-                    let secondary_jump_result = direct_jump::with_collect_bindings(|bindings| {
-                        bindings.execute_secondary_abort_jump(
-                            direct_jump.get_collector_channel_id(),
-                            self.rfp.0 as *mut u8,
-                        )
-                    });
-
-                    if let Err(err) = secondary_jump_result {
-                        self.in_collector = false;
-                        let _ = err;
-                        return Err("Secondary abort detected - escalating to parent collector failed");
-                    }
-
-                    unreachable!("secondary abort jump does not return");
-                }
-
-                // O(1) abort with direct jump (no stack unwinding)
-                direct_jump.execute_direct_jump();
-                // This never returns (noreturn assembly)
-            }
+            return Err(err);
         }
 
         // Fallback: Traditional collector invocation (if direct jump not configured)
@@ -267,24 +246,23 @@ impl ExecutionContext {
         collector_ip: *const u8,
         collector_channel_id: u32,
     ) {
-        self.direct_jump_context = Some(HybridContextSwitch::new(
+        direct_jump::set_context_direct_jump_state(
+            &mut self.direct_jump_context,
             target_cfp,
             target_rfp,
             collector_ip,
             collector_channel_id,
-        ));
-        // Update thread-local hybrid context
-        set_hybrid_context(target_cfp as usize, target_rfp as usize);
+        );
     }
     
     /// Phase 6: Clear direct jump context
     pub fn clear_direct_jump_context(&mut self) {
-        self.direct_jump_context = None;
+        direct_jump::clear_context_direct_jump_state(&mut self.direct_jump_context);
     }
     
     /// Phase 6: Get current hybrid context (CFP/RFP values)
     pub fn get_hybrid_context(&self) -> Option<(usize, usize)> {
-        get_hybrid_context()
+        direct_jump::current_context_hybrid_state()
     }
 
     /// Check if currently in collector

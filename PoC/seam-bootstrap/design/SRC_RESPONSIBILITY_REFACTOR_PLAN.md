@@ -68,21 +68,21 @@ Notes:
 
 ### C. Context debugger concern extraction
 
-- Added internal helper module: `src/runtime/context_debug.rs`.
-- Moved debug-specific helper logic (`record_ghost_frame`, abort/collector breakpoint checks)
-  out of direct implementation detail in `src/runtime/context.rs`.
-- `ExecutionContext` public API remains unchanged; `context` now delegates to helper functions.
+- Consolidated debug-specific helper logic into `src/runtime/debugger.rs`
+  (`record_abort_ghost_frame`, `should_break_on_abort`, `should_break_on_collector_entry`).
+- Removed intermediate helper module `src/runtime/context_debug.rs`.
+- `ExecutionContext` public API remains unchanged; `context` delegates directly to debugger context methods.
 
 Effect:
-- `context.rs` becomes more focused on frame/context lifecycle and abort orchestration.
-- Debugger behavior can evolve independently with lower risk of touching frame management code.
+- `context.rs` is less coupled to breakpoint implementation details.
+- Debugger behavior is centralized in one module.
 
 ### D. Physical directory split by responsibility group
 
 Moved source files into grouped directories:
 
 - `src/runtime/`
-  - pssa / context / context_debug / abort / cfp_rfp / shadow_arena / sarm / gac / direct_jump / signal_handler / debugger
+  - pssa / context / abort / cfp_rfp / shadow_arena / sarm / gac / direct_jump / signal_handler / debugger
 - `src/compile/`
   - ast / compiler / codegen / contract / effect
 - `src/execution/`
@@ -93,25 +93,33 @@ Compatibility handling:
   and maps them to new file locations via `#[path = "..."]`.
 - Existing imports remain valid while the physical layout is now domain-oriented.
 
+### E. Context direct-jump concern extraction (plan correction)
+
+- `context_jump` helper was removed because it split one domain across two modules.
+- Direct-jump setup/clear/hybrid-context retrieval and abort jump dispatch were consolidated
+  into `src/runtime/direct_jump.rs`.
+- `src/runtime/context.rs` now acts as orchestrator and delegates direct-jump details to
+  `direct_jump` helpers while preserving public API.
+
+Effect:
+- Better cohesion for direct-jump related behavior.
+- Less conceptual duplication between `context` orchestration and jump mechanics.
+
 ## Recommended Next Steps (Incremental)
 
-1. Context decomposition (next internal split)
-- Extract direct-jump specific helper logic from `src/runtime/context.rs` into a dedicated helper module.
-- Keep `ExecutionContext` public API unchanged.
-
-2. Runtime package visibility tightening
+1. Runtime package visibility tightening
 - Apply `pub(crate)` to runtime internals that should not be external API.
 - Keep public re-exports only for stable surface.
 
-3. Execution flow isolation
+2. Execution flow isolation
 - In `src/execution/linker.rs`, isolate phase execution state machine from pseudo-code interpreter glue.
 - Introduce internal submodules: `phases`, `interpreter_bridge`, `result_aggregation`.
 
-4. Boundary enforcement
+3. Boundary enforcement
 - Add `pub(crate)` where external visibility is not required.
 - Reduce direct cross-domain imports (compile -> runtime should be metadata-only where possible).
 
-5. Regression safety
+4. Regression safety
 - Add a focused test matrix for:
   - abort path + collector dispatch
   - SARM lookup/serialization

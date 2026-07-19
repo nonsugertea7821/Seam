@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::cell::RefCell;
+use crate::cfp_rfp::{get_hybrid_context, set_hybrid_context, HybridContextSwitch};
 
 const NO_PARENT_CHANNEL_ID: u32 = u32::MAX;
 
@@ -327,6 +328,70 @@ pub fn with_collect_bindings<R>(f: impl FnOnce(&CollectBindingTable) -> R) -> R 
 /// Get a cloned snapshot of the thread-local collect bindings.
 pub fn get_collect_bindings() -> CollectBindingTable {
     COLLECT_BINDINGS.with(|bindings| bindings.borrow().clone())
+}
+
+/// Configure per-context direct-jump state and synchronize thread-local CFP/RFP.
+pub(crate) fn set_context_direct_jump_state(
+    direct_jump_context: &mut Option<HybridContextSwitch>,
+    target_cfp: *mut u8,
+    target_rfp: *mut u8,
+    collector_ip: *const u8,
+    collector_channel_id: u32,
+) {
+    *direct_jump_context = Some(HybridContextSwitch::new(
+        target_cfp,
+        target_rfp,
+        collector_ip,
+        collector_channel_id,
+    ));
+    set_hybrid_context(target_cfp as usize, target_rfp as usize);
+}
+
+/// Clear per-context direct-jump state.
+pub(crate) fn clear_context_direct_jump_state(
+    direct_jump_context: &mut Option<HybridContextSwitch>,
+) {
+    *direct_jump_context = None;
+}
+
+/// Read current thread-local hybrid context (CFP, RFP).
+pub(crate) fn current_context_hybrid_state() -> Option<(usize, usize)> {
+    get_hybrid_context()
+}
+
+/// Execute direct-jump abort flow for primary/secondary aborts.
+pub(crate) fn execute_context_abort_jump(
+    direct_jump_context: &Option<HybridContextSwitch>,
+    was_in_collector: bool,
+    rfp: usize,
+) -> Result<(), &'static str> {
+    if was_in_collector && direct_jump_context.is_none() {
+        return Err("Secondary abort detected - no direct jump context configured");
+    }
+
+    if let Some(direct_jump) = direct_jump_context {
+        unsafe {
+            if was_in_collector {
+                let secondary_jump_result = with_collect_bindings(|bindings| {
+                    bindings.execute_secondary_abort_jump(
+                        direct_jump.get_collector_channel_id(),
+                        rfp as *mut u8,
+                    )
+                });
+
+                if secondary_jump_result.is_err() {
+                    return Err("Secondary abort detected - escalating to parent collector failed");
+                }
+
+                unreachable!("secondary abort jump does not return");
+            }
+
+            // O(1) abort with direct jump (no stack unwinding).
+            direct_jump.execute_direct_jump();
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
