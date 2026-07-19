@@ -145,6 +145,17 @@ Progress (this iteration):
 - Add `pub(crate)` where external visibility is not required.
 - Reduce direct cross-domain imports (compile -> runtime should be metadata-only where possible).
 
+Progress (this iteration):
+- `src/execution/linker/phases.rs`
+  - Internal phase helpers narrowed from `pub(crate)` to `pub(super)`.
+- `src/execution/linker/result_aggregation.rs`
+  - Internal aggregation helpers narrowed from `pub(crate)` to `pub(super)`.
+- `src/runtime/cfp_rfp.rs`
+  - `clear_hybrid_context` made private (module-local).
+- Cross-domain import audit (`src/compile/*.rs`)
+  - No direct compile -> runtime module import found.
+  - Current compile dependencies remain metadata-oriented.
+
 4. Regression safety
 - Add a focused test matrix for:
   - abort path + collector dispatch

@@ -3,7 +3,7 @@ use crate::context::ExecutionContext;
 use super::{CodeInterpreter, ExecutionState, LinkedFork};
 use super::result_aggregation;
 
-pub(crate) fn phase_setup(
+pub(super) fn phase_setup(
     linked: &LinkedFork,
     execution_state: &mut ExecutionState,
     context: &mut ExecutionContext,
@@ -16,7 +16,7 @@ pub(crate) fn phase_setup(
     Ok(())
 }
 
-pub(crate) fn phase_dispatch(
+pub(super) fn phase_dispatch(
     linked: &LinkedFork,
     execution_state: &mut ExecutionState,
     context: &mut ExecutionContext,
@@ -56,7 +56,7 @@ pub(crate) fn phase_dispatch(
     Ok(())
 }
 
-pub(crate) fn phase_barriers(
+pub(super) fn phase_barriers(
     linked: &LinkedFork,
     execution_state: &mut ExecutionState,
 ) -> Result<(), String> {
@@ -68,12 +68,12 @@ pub(crate) fn phase_barriers(
     Ok(())
 }
 
-pub(crate) fn phase_collect(execution_state: &mut ExecutionState) -> Result<(), String> {
+pub(super) fn phase_collect(execution_state: &mut ExecutionState) -> Result<(), String> {
     execution_state.collect_done = true;
     Ok(())
 }
 
-pub(crate) fn phase_join(
+pub(super) fn phase_join(
     linked: &LinkedFork,
     execution_state: &mut ExecutionState,
 ) -> Result<(), String> {

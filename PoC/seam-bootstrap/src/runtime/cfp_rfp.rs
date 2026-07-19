@@ -150,7 +150,7 @@ pub fn get_hybrid_context() -> Option<(usize, usize)> {
 }
 
 /// Clear hybrid context (typically at channel completion)
-pub(crate) fn clear_hybrid_context() {
+fn clear_hybrid_context() {
     HYBRID_CONTEXT.with(|ctx| ctx.set(None));
 }
 
