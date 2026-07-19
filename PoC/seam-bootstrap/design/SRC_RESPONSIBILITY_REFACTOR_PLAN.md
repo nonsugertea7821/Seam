@@ -111,6 +111,18 @@ Effect:
 - Apply `pub(crate)` to runtime internals that should not be external API.
 - Keep public re-exports only for stable surface.
 
+Progress (this iteration):
+- `src/runtime/cfp_rfp.rs`
+  - `HYBRID_CONTEXT` thread-local state made private.
+  - `clear_hybrid_context` changed to `pub(crate)`.
+- `src/runtime/direct_jump.rs`
+  - `with_collect_bindings` changed to `pub(crate)`.
+  - `get_collect_bindings` changed to `pub(crate)`.
+
+Rationale:
+- These items are used only by internal runtime orchestration paths.
+- Public surface for consumers remains stable (`set_collect_bindings`, type exports, grouped re-exports).
+
 2. Execution flow isolation
 - In `src/execution/linker.rs`, isolate phase execution state machine from pseudo-code interpreter glue.
 - Introduce internal submodules: `phases`, `interpreter_bridge`, `result_aggregation`.

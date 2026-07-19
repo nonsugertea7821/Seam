@@ -136,7 +136,7 @@ impl HybridContextSwitch {
 }
 
 thread_local! {
-    pub static HYBRID_CONTEXT: Cell<Option<(usize, usize)>> = Cell::new(None);
+    static HYBRID_CONTEXT: Cell<Option<(usize, usize)>> = Cell::new(None);
 }
 
 /// Set current CFP/RFP values in thread-local storage
@@ -150,7 +150,7 @@ pub fn get_hybrid_context() -> Option<(usize, usize)> {
 }
 
 /// Clear hybrid context (typically at channel completion)
-pub fn clear_hybrid_context() {
+pub(crate) fn clear_hybrid_context() {
     HYBRID_CONTEXT.with(|ctx| ctx.set(None));
 }
 

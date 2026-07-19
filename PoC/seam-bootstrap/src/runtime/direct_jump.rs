@@ -318,7 +318,7 @@ pub fn set_collect_bindings(table: CollectBindingTable) {
 }
 
 /// Borrow the thread-local collect bindings and run a closure against them.
-pub fn with_collect_bindings<R>(f: impl FnOnce(&CollectBindingTable) -> R) -> R {
+pub(crate) fn with_collect_bindings<R>(f: impl FnOnce(&CollectBindingTable) -> R) -> R {
     COLLECT_BINDINGS.with(|bindings| {
         let bindings = bindings.borrow();
         f(&bindings)
@@ -326,7 +326,7 @@ pub fn with_collect_bindings<R>(f: impl FnOnce(&CollectBindingTable) -> R) -> R 
 }
 
 /// Get a cloned snapshot of the thread-local collect bindings.
-pub fn get_collect_bindings() -> CollectBindingTable {
+pub(crate) fn get_collect_bindings() -> CollectBindingTable {
     COLLECT_BINDINGS.with(|bindings| bindings.borrow().clone())
 }
 
