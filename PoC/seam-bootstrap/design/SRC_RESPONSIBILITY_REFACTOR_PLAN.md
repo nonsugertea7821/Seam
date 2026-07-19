@@ -23,8 +23,8 @@ Risk:
 ### 2) Duplicate SARMEntry definition
 
 `SARMEntry` existed in both:
-- `src/abort.rs`
-- `src/sarm.rs`
+- `src/runtime/abort.rs`
+- `src/runtime/sarm.rs`
 
 Risk:
 - Struct layout drift can cause ABI/logic mismatch.
@@ -32,7 +32,7 @@ Risk:
 
 ### 3) Responsibility concentration in core runtime files
 
-`src/context.rs` currently mixes:
+`src/runtime/context.rs` currently mixes:
 - CFP/RFP state management
 - frame allocation orchestration
 - direct jump integration
@@ -44,8 +44,8 @@ This is not immediately broken, but it increases change coupling.
 
 ### A. Duplicate type unification
 
-- Removed local `SARMEntry` from `src/abort.rs`.
-- `abort` now imports and uses canonical `SARMEntry` from `src/sarm.rs`.
+- Removed local `SARMEntry` from `src/runtime/abort.rs`.
+- `abort` now imports and uses canonical `SARMEntry` from `src/runtime/sarm.rs`.
 
 Effect:
 - Single source of truth for static abort register metadata.
@@ -66,18 +66,45 @@ Notes:
 - Existing flat exports are preserved for compatibility.
 - This is a non-breaking first step toward stricter boundaries.
 
+### C. Context debugger concern extraction
+
+- Added internal helper module: `src/runtime/context_debug.rs`.
+- Moved debug-specific helper logic (`record_ghost_frame`, abort/collector breakpoint checks)
+  out of direct implementation detail in `src/runtime/context.rs`.
+- `ExecutionContext` public API remains unchanged; `context` now delegates to helper functions.
+
+Effect:
+- `context.rs` becomes more focused on frame/context lifecycle and abort orchestration.
+- Debugger behavior can evolve independently with lower risk of touching frame management code.
+
+### D. Physical directory split by responsibility group
+
+Moved source files into grouped directories:
+
+- `src/runtime/`
+  - pssa / context / context_debug / abort / cfp_rfp / shadow_arena / sarm / gac / direct_jump / signal_handler / debugger
+- `src/compile/`
+  - ast / compiler / codegen / contract / effect
+- `src/execution/`
+  - channel / resource / shadow_buffer / transaction / fork / sync / linker
+
+Compatibility handling:
+- `src/lib.rs` keeps existing module names (`crate::context`, `crate::linker`, ...)
+  and maps them to new file locations via `#[path = "..."]`.
+- Existing imports remain valid while the physical layout is now domain-oriented.
+
 ## Recommended Next Steps (Incremental)
 
-1. Context decomposition (small internal split)
-- Extract debugger-specific helper methods from `context.rs` to a dedicated extension module.
+1. Context decomposition (next internal split)
+- Extract direct-jump specific helper logic from `src/runtime/context.rs` into a dedicated helper module.
 - Keep `ExecutionContext` public API unchanged.
 
-2. Runtime package physical split
-- Move runtime files into `src/runtime/` gradually using `mod` forwarding.
-- Start with low-risk files: `sarm`, `direct_jump`, `signal_handler`.
+2. Runtime package visibility tightening
+- Apply `pub(crate)` to runtime internals that should not be external API.
+- Keep public re-exports only for stable surface.
 
 3. Execution flow isolation
-- In `linker.rs`, isolate phase execution state machine from pseudo-code interpreter glue.
+- In `src/execution/linker.rs`, isolate phase execution state machine from pseudo-code interpreter glue.
 - Introduce internal submodules: `phases`, `interpreter_bridge`, `result_aggregation`.
 
 4. Boundary enforcement

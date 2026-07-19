@@ -10,6 +10,7 @@
 
 use crate::pssa::Arena;
 use crate::cfp_rfp::{HybridContextSwitch, set_hybrid_context, get_hybrid_context};
+use crate::context_debug;
 use crate::direct_jump;
 use crate::debugger::DebuggerContext;
 use std::sync::Arc;
@@ -154,24 +155,17 @@ impl ExecutionContext {
 
     /// Phase 9: Record ghost frame snapshot when abort occurs
     pub fn record_ghost_frame(&mut self, resource_id: u32, phase: u32) {
-        use crate::debugger::GhostFrameSnapshot;
-        
-        let snapshot = GhostFrameSnapshot::new(self.rfp.0, self.cfp.0, resource_id, phase);
-        self.debugger.record_ghost_frame(snapshot);
+        context_debug::record_ghost_frame(&mut self.debugger, self.rfp.0, self.cfp.0, resource_id, phase);
     }
 
     /// Phase 9: Check if should break on abort event
     pub fn should_break_on_abort(&mut self, resource_id: u32) -> bool {
-        use crate::debugger::BreakpointLocation;
-        
-        self.debugger.should_break_at(BreakpointLocation::OnAbort, resource_id)
+        context_debug::should_break_on_abort(&mut self.debugger, resource_id)
     }
 
     /// Phase 9: Check if should break on collector entry
     pub fn should_break_on_collector_entry(&mut self, resource_id: u32) -> bool {
-        use crate::debugger::BreakpointLocation;
-        
-        self.debugger.should_break_at(BreakpointLocation::OnCollectorEntry, resource_id)
+        context_debug::should_break_on_collector_entry(&mut self.debugger, resource_id)
     }
 
     /// Abort current frame and trigger collector

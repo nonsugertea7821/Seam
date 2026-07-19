@@ -7,28 +7,52 @@
 //! Phase 4: Compiler integration with AST, parsing, and code generation.
 //! Phase 6: Low-Level Runtime — ABI layer with CFP/RFP, shadow arena, SARM, GAC, direct jump.
 
+#[path = "runtime/pssa.rs"]
 pub mod pssa;
+#[path = "runtime/context.rs"]
 pub mod context;
+#[path = "runtime/abort.rs"]
 pub mod abort;
+#[path = "execution/channel.rs"]
 pub mod channel;
+#[path = "execution/resource.rs"]
 pub mod resource;
+#[path = "execution/shadow_buffer.rs"]
 pub mod shadow_buffer;
+#[path = "execution/transaction.rs"]
 pub mod transaction;
+#[path = "execution/fork.rs"]
 pub mod fork;
+#[path = "compile/effect.rs"]
 pub mod effect;
+#[path = "compile/contract.rs"]
 pub mod contract;
+#[path = "execution/sync.rs"]
 pub mod sync;
+#[path = "compile/ast.rs"]
 pub mod ast;
+#[path = "compile/compiler.rs"]
 pub mod compiler;
+#[path = "compile/codegen.rs"]
 pub mod codegen;
+#[path = "execution/linker.rs"]
 pub mod linker;
+#[path = "runtime/cfp_rfp.rs"]
 pub mod cfp_rfp;
+#[path = "runtime/shadow_arena.rs"]
 pub mod shadow_arena;
+#[path = "runtime/sarm.rs"]
 pub mod sarm;
+#[path = "runtime/gac.rs"]
 pub mod gac;
+#[path = "runtime/direct_jump.rs"]
 pub mod direct_jump;
+#[path = "runtime/signal_handler.rs"]
 pub mod signal_handler;
+#[path = "runtime/debugger.rs"]
 pub mod debugger;
+#[path = "runtime/context_debug.rs"]
+mod context_debug;
 
 /// Logical package split for runtime-centric types and services.
 pub mod runtime {
