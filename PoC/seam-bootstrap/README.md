@@ -551,12 +551,6 @@ Seam uses **direct jump with ghost frame (RFP)**:
 
 ---
 
-## 📝 License
-
-Internal PoC implementation for Axiomium/Seam project.
-
----
-
 ## 🙋 Questions About Architecture?
 
 This README documents the full architecture. For specific questions:
