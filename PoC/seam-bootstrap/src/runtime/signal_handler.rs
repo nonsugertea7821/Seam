@@ -1,6 +1,6 @@
-//! Phase 8: Signal Integration - Connect abort mechanism to OS signal handlers
+//! Signal Integration - Connect abort mechanism to OS signal handlers
 //!
-//! Integrates OS signals (SIGTERM, SIGABRT, SIGINT) with the Phase 7 direct jump abort mechanism.
+//! Integrates OS signals (SIGTERM, SIGABRT, SIGINT) with the direct jump abort mechanism.
 //! When a signal is received, triggers O(1) abort via CFP/RFP context switch.
 //!
 //! **Architecture**:
@@ -174,7 +174,7 @@ impl SignalHandler {
                 // 2. We're modifying CPU registers and executing a jump
                 // 3. We're bypassing normal Rust control flow
                 // 
-                // However, this is exactly what Phase 8 is designed for:
+                // However, this is necessary to achieve:
                 // - O(1) abort from any execution context
                 // - Pre-computed abort target (verified at registration)
                 // - No stack unwinding or DWARF lookup

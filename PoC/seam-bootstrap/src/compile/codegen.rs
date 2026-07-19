@@ -1,4 +1,4 @@
-//! Phase 4: Code Generator - Producing executable fork/join code
+//! Code Generator - Producing executable fork/join code
 //!
 //! This module generates Rust code from compiled Seam fork expressions,
 //! producing ready-to-execute fork/join patterns with automatic synchronization.

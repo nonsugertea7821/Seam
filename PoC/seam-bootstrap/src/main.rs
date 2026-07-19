@@ -8,10 +8,10 @@ use seam_bootstrap::{
 };
 
 fn main() {
-    println!("╔════════════════════════════════════════════════════════════════════════╗");
-    println!("║ Seam VM PoC Bootstrap - Phase 6: Low-Level Runtime (ABI Layer)        ║");
+    println!("╔══════════════════════════════════════════════════════════════════════╗");
+    println!("║ Seam VM PoC Bootstrap                                                ║");
     println!("║     CFP/RFP Hybrid Context, Shadow Arena, SARM, GAC, Direct Jump     ║");
-    println!("╚════════════════════════════════════════════════════════════════════════╝\n");
+    println!("╚══════════════════════════════════════════════════════════════════════╝\n");
 
     // ========================================================================
     // PART 1: Initialize VM
@@ -80,7 +80,7 @@ fn main() {
     // ========================================================================
     // PART 3: Shadow Arena — Fork Path Isolation
     // ========================================================================
-    println!("[PART 3] Shadow Arena — 2PST Phase 1 (Speculative Execution)");
+    println!("[PART 3] Shadow Arena — 2PST Isolation and Speculative Buffers");
     println!("════════════════════════════════════════════════════════════════════");
 
     let shadow_arena = get_shadow_arena();
@@ -97,7 +97,7 @@ fn main() {
     shadow_arena.shadow_write(1, 2, 0, b"path1_data".to_vec()).unwrap();
     shadow_arena.shadow_write(2, 1, 8, b"path2_update".to_vec()).unwrap();
 
-    println!("✓ Phase 1: Speculative writes staged to shadow buffers:");
+    println!("✓ Speculative writes staged to shadow buffers:");
     println!("  - Path 0: {} bytes staged", shadow_arena.path_staged_bytes(0));
     println!("  - Path 1: {} bytes staged", shadow_arena.path_staged_bytes(1));
     println!("  - Path 2: {} bytes staged", shadow_arena.path_staged_bytes(2));
@@ -245,18 +245,18 @@ fn main() {
     println!("[PART 7] Two-Phase Static Transaction (2PST) Protocol");
     println!("════════════════════════════════════════════════════════════════════");
 
-    println!("✓ Phase 1: Speculative Execution");
+    println!("✓ Speculative Execution");
     println!("  - Fork paths execute with independent shadow buffers");
     println!("  - Each path: write to shadow buffer (lock-free, no contention)");
     println!("  - Staged bytes: {} (total across all paths)", shadow_arena.total_staged());
 
-    println!("\n✓ Phase 2: Static Commit");
+    println!("\n✓ Static Commit");
     println!("  - Compiler determines lock order at compile time");
     println!("  - Runtime: acquire locks in static order (no deadlock)");
     println!("  - Flush all shadow buffers → main memory atomically");
     println!("  - Release locks in reverse order");
 
-    println!("\n✓ Phase 3: Abort Cleanup");
+    println!("\n✓ Abort Cleanup");
     println!("  - On abort: discard shadow buffers (main memory untouched)");
     println!("  - Execute collector via direct jump (CFP/RFP simultaneous switch)");
     println!("  - No stack unwinding, O(1) abort overhead");
@@ -288,7 +288,7 @@ fn main() {
     // ========================================================================
     // PART 9: Architecture Summary
     // ========================================================================
-    println!("[PART 9] Phase 6 Architecture Summary");
+    println!("[PART 9] Architecture Summary");
     println!("════════════════════════════════════════════════════════════════════");
 
     println!("Layer 1: Physical Registers (CFP/RFP)");
@@ -296,7 +296,7 @@ fn main() {
     println!("  ✓ No stack unwinding (no DWARF, no dynamic dispatch)");
     println!("  ✓ Deterministic control transfer");
 
-    println!("\nLayer 2: Shadow Arena (2PST Phase 1)");
+    println!("\nLayer 2: Shadow Arena (2PST Isolation)");
     println!("  ✓ Per-path isolation with independent shadow buffers");
     println!("  ✓ Lock-free speculative execution");
     println!("  ✓ Shared resource tracking (OS syscalls, files)");
@@ -327,7 +327,7 @@ fn main() {
     println!("DRAFT Specification Verified:");
     println!("  ✓ PSSA: Thread-local bounded arena with bump allocation");
     println!("  ✓ CFP/RFP: Physical register separation (abort safety)");
-    println!("  ✓ 2PST: Phase 1 (speculative) → Phase 2 (commit) → Phase 3 (abort)");
+    println!("  ✓ 2PST: speculative → commit → abort");
     println!("  ✓ SARM: Static abort register map in .rodata");
     println!("  ✓ GAC: Generational arena checkpoint for loops");
     println!("  ✓ Direct Jump: O(1) :collect → collector path");
@@ -341,13 +341,10 @@ fn main() {
 
     println!();
 
-    println!("╔════════════════════════════════════════════════════════════════════════╗");
-    println!("║         ✓ Phase 6: Low-Level Runtime Implementation Complete          ║");
-    println!("║                                                                        ║");
-    println!("║  Status:  18 modules, ~5,500 lines, 100+ tests (all passing)          ║");
-    println!("║  Phases:  1 (PSSA) → 2 (Transaction) → 3 (Resource) → 4 (Compiler)   ║");
-    println!("║           → 5 (Removed) → 6 (ABI Layer: This Phase)                   ║");
-    println!("║                                                                        ║");
-    println!("║  Ready for:  Full DRAFT language compilation and execution            ║");
-    println!("╚════════════════════════════════════════════════════════════════════════╝");
+    println!("╔═══════════════════════════════════════════════════════════════╗");
+    println!("║            Low-Level Runtime Implementation Complete          ║");
+    println!("║                                                               ║");
+    println!("║  Ready for:  Full DRAFT language compilation and execution    ║");
+    println!("╚═══════════════════════════════════════════════════════════════╝");
+    
 }

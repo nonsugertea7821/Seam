@@ -3,9 +3,6 @@
 //! Path-bounded Shadow Stack Arena (PSSA) implementation with hybrid context
 //! (CFP/RFP) and static abort/collector semantics.
 //! Includes 2PST (Two-Phase Static Transaction) support for fork paths.
-//! Phase 3: Resource tracking with requires contracts and automatic synchronization.
-//! Phase 4: Compiler integration with AST, parsing, and code generation.
-//! Phase 6: Low-Level Runtime — ABI layer with CFP/RFP, shadow arena, SARM, GAC, direct jump.
 
 #[path = "runtime/pssa.rs"]
 pub mod pssa;

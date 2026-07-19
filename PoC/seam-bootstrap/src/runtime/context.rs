@@ -1,8 +1,8 @@
 //! Hybrid Execution Context (CFP / RFP)
 //!
-//! Phase 1 + Phase 6 Integration:
-//! - Phase 1: Memory management with PSSA arena and frame pointers
-//! - Phase 6: Physical register bindings for O(1) direct jump abort mechanism
+//! Integration:
+//!  Memory management with PSSA arena and frame pointers
+//!  Physical register bindings for O(1) direct jump abort mechanism
 //!
 //! Separates control flow pointers and resource pointers for abort/collector semantics
 //! CFP (Control Frame Pointer) - current execution context parent frame (physical register: rbp/x29)
@@ -59,7 +59,7 @@ pub struct FrameLayout {
 
 /// Execution context managing PSSA and frame pointers
 /// 
-/// Integrates Phase 1 (memory management) with Phase 6 (physical register bindings):
+/// Integrates Memory management with phisical register bindings for O(1) direct jump abort mechanism.
 /// - Maintains hybrid CFP/RFP state
 /// - Enables O(1) abort via direct jump (no stack unwinding)
 /// - Tracks frame layout and collector paths
@@ -75,9 +75,9 @@ pub struct ExecutionContext {
     in_collector: bool,
     /// Thread ID (for debugging)
     thread_id: u64,
-    /// Phase 6: Direct jump context for abort mechanism
+    /// Direct jump context for abort mechanism
     direct_jump_context: Option<HybridContextSwitch>,
-    /// Phase 9: Debugger context for breakpoints and inspections
+    /// Debugger context for breakpoints and inspections
     debugger: DebuggerContext,
 }
 
@@ -101,10 +101,10 @@ impl ExecutionContext {
             in_collector: false,
             thread_id,
             direct_jump_context: None,
-            debugger: DebuggerContext::new(),  // Phase 9: Initialize debugger
+            debugger: DebuggerContext::new(),  // Initialize debugger
         };
         
-        // Phase 6 Integration: Initialize thread-local hybrid context
+        // Initialize thread-local hybrid context
         set_hybrid_context(ctx.cfp.0, ctx.rfp.0);
         
         Ok(ctx)
@@ -142,39 +142,39 @@ impl ExecutionContext {
         Ok(frame_ptr)
     }
 
-    /// Phase 9: Get mutable reference to debugger context
+    /// Get mutable reference to debugger context
     pub fn debugger_mut(&mut self) -> &mut DebuggerContext {
         &mut self.debugger
     }
 
-    /// Phase 9: Get immutable reference to debugger context
+    /// Get immutable reference to debugger context
     pub fn debugger(&self) -> &DebuggerContext {
         &self.debugger
     }
 
-    /// Phase 9: Record ghost frame snapshot when abort occurs
+    /// Record ghost frame snapshot when abort occurs
     pub fn record_ghost_frame(&mut self, resource_id: u32, phase: u32) {
         self.debugger.record_abort_ghost_frame(self.rfp.0, self.cfp.0, resource_id, phase);
     }
 
-    /// Phase 9: Check if should break on abort event
+    /// Check if should break on abort event
     pub fn should_break_on_abort(&mut self, resource_id: u32) -> bool {
         self.debugger.should_break_on_abort(resource_id)
     }
 
-    /// Phase 9: Check if should break on collector entry
+    /// Check if should break on collector entry
     pub fn should_break_on_collector_entry(&mut self, resource_id: u32) -> bool {
         self.debugger.should_break_on_collector_entry(resource_id)
     }
 
     /// Abort current frame and trigger collector
     ///
-    /// Phase 1 + Phase 6 Integration:
+    /// Abort current frame and trigger collector:
     /// - Sets RFP to point to aborted frame (ghost frame for cleanup)
     /// - Prepares direct jump context for O(1) abort
     /// - May trigger direct jump to collector (DWARF-free exception handling)
     ///
-    /// # Phase 6 Direct Jump Mechanism
+    /// # Direct Jump Mechanism
     /// If `direct_jump_context` is configured, executes O(1) abort:
     /// - x86-64: mov rbp, target_cfp; mov r15, target_rfp; jmp collector_ip
     /// - AArch64: mov x29, target_cfp; mov x28, target_rfp; br collector_ip
@@ -183,14 +183,14 @@ impl ExecutionContext {
         self.in_collector = true;
         self.rfp = ResourceFramePtr(self.cfp.0);
         
-        // Phase 9: Record ghost frame and check for breakpoint
+        // Record ghost frame and check for breakpoint
         self.record_ghost_frame(0, 5);  // resource_id=0, phase=5 (dispatch)
         if self.should_break_on_abort(0) {
-            // Phase 9: Would trigger debugger break here
+            // Would trigger debugger break here
             // For now, just record that breakpoint was hit
         }
         
-        // Update thread-local hybrid context for Phase 6 direct jump
+        // Update thread-local hybrid context for direct jump
         set_hybrid_context(self.cfp.0, self.rfp.0);
 
         if let Err(err) = direct_jump::execute_context_abort_jump(
@@ -230,7 +230,7 @@ impl ExecutionContext {
         Arc::clone(&self.arena)
     }
     
-    /// Phase 6: Set direct jump context for abort mechanism
+    /// Set direct jump context for abort mechanism
     /// 
     /// Configures O(1) abort via direct jump instead of traditional unwinding
     /// 
@@ -255,12 +255,12 @@ impl ExecutionContext {
         );
     }
     
-    /// Phase 6: Clear direct jump context
+    /// Clear direct jump context
     pub fn clear_direct_jump_context(&mut self) {
         direct_jump::clear_context_direct_jump_state(&mut self.direct_jump_context);
     }
     
-    /// Phase 6: Get current hybrid context (CFP/RFP values)
+    /// Get current hybrid context (CFP/RFP values)
     pub fn get_hybrid_context(&self) -> Option<(usize, usize)> {
         direct_jump::current_context_hybrid_state()
     }
@@ -289,13 +289,13 @@ impl ExecutionContext {
         self.arena.remaining()
     }
     
-    /// Phase 6: Check if direct jump context is configured
+    /// Check if direct jump context is configured
     #[inline]
     pub fn has_direct_jump_context(&self) -> bool {
         self.direct_jump_context.is_some()
     }
 
-    /// Phase 8: Register signal handler for this execution context
+    /// Register signal handler for this execution context
     /// 
     /// Enables OS signals (SIGTERM, SIGABRT, SIGINT) to trigger direct jump abort
     /// Must be called once per context when signal handling is desired
@@ -320,7 +320,7 @@ impl ExecutionContext {
         }
     }
     
-    /// Phase 8: Unregister signal handler
+    /// Unregister signal handler
     pub fn unregister_signal_handler(&self) -> Result<(), &'static str> {
         use crate::signal_handler::SignalHandler;
         

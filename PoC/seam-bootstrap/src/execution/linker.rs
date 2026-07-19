@@ -1,9 +1,9 @@
-//! Phase 5: Runtime Linker - Linking Compiled Forks (NOT Execution)
+//! Runtime Linker - Linking Compiled Forks (NOT Execution)
 //!
 //! This module implements the runtime linker that converts CompiledFork metadata
 //! into executable LinkedFork representations. Linking is SEPARATE from execution.
 //!
-//! Responsibilities (THIS PHASE):
+//! Responsibilities:
 //! 1. Link CompiledFork → LinkedFork (metadata preparation)
 //! 2. Extract resource access metadata
 //! 3. Prepare MemoryBarrier information
@@ -33,7 +33,7 @@ pub struct PathResult {
     pub path_id: u32,
     pub resource_id: ResourceId,
     pub success: bool,
-    pub aborted: bool,  // Phase 7: Track abort status for direct jump
+    pub aborted: bool,  // Track abort status for direct jump
     // NOTE: data field removed - state belongs in ResourceFrame, not here
 }
 
@@ -59,7 +59,7 @@ impl PathResult {
     }
 }
 
-/// Phase 7: Abort target for direct jump to collector
+/// Abort target for direct jump to collector
 #[derive(Debug, Clone)]
 pub struct AbortTarget {
     pub target_cfp: *mut u8,      // Control Frame Pointer
@@ -123,8 +123,8 @@ impl PathState {
 
 /// Runtime representation of a linked fork expression
 ///
-/// LinkedFork is the output of Phase 5 linking. It contains all metadata
-/// needed for Phase 5B (ForkExecutor) to execute the fork.
+/// LinkedFork is the output of linking. It contains all metadata
+/// needed for ForkExecutor to execute the fork.
 #[derive(Debug, Clone)]
 pub struct LinkedFork {
     fork_id: u32,
@@ -132,8 +132,8 @@ pub struct LinkedFork {
     path_states: Vec<PathState>,
     barriers: Vec<MemoryBarrier>,
     resource_accesses: BTreeMap<ResourceId, Vec<AccessType>>,
-    pub generated_code: Option<String>, // Phase 5C: Pseudo-code to execute
-    pub abort_target: Option<AbortTarget>, // Phase 7: Direct jump target for abort
+    pub generated_code: Option<String>, // Pseudo-code to execute
+    pub abort_target: Option<AbortTarget>, // Direct jump target for abort
 }
 
 impl LinkedFork {
@@ -238,12 +238,12 @@ impl ForkExecutionResult {
 
 ///
 /// Responsibilities:
-/// 1. Execute LinkedFork from Phase 5 linker
+/// 1. Execute LinkedFork from linker
 /// 2. Manage 5-phase execution (setup → dispatch → barriers → collect → join)
 /// 3. Coordinate path execution with ExecutionContext
-/// 4. Handle abort paths via direct jump integration (Phase 6)
+/// 4. Handle abort paths via direct jump integration
 ///
-/// Note: Actual path execution code (pseudo-code interpretation) deferred to Phase 5C
+/// Note: Actual path execution code (pseudo-code interpretation) is deferred to CodeInterpreter.
 pub struct ForkExecutor {
     linked: LinkedFork,
     execution_state: ExecutionState,
@@ -290,7 +290,7 @@ impl ForkExecutor {
     /// Phases:
     /// 1. Setup: Allocate execution frames for each path
     /// 2. Dispatch: Schedule paths to execution engine
-    /// 3. Barriers: Execute synchronization barriers (Phase 3)
+    /// 3. Barriers: Execute synchronization barriers
     /// 4. Collect: Gather results from all paths
     /// 5. Join: Synchronize paths at join point
     pub fn execute(&mut self, context: &mut ExecutionContext) -> Result<ForkExecutionResult, String> {
@@ -319,8 +319,8 @@ impl ForkExecutor {
 
     /// Phase 2: Dispatch - Schedule paths to execution engine
     ///
-    /// Executes pseudo-code for each path using CodeInterpreter (Phase 5C).
-    /// Phase 7: If abort detected, executes direct jump to collector.
+    /// Executes pseudo-code for each path using CodeInterpreter.
+    /// If abort detected, executes direct jump to collector.
     fn phase_dispatch(&mut self, context: &mut ExecutionContext) -> Result<(), String> {
         phases::phase_dispatch(&self.linked, &mut self.execution_state, context)
     }
@@ -502,7 +502,7 @@ mod tests {
         let linked = RuntimeLinker::link(&compiled);
         let mut executor = ForkExecutor::new(linked);
 
-        // Phase 5B implementation: 5-phase execution
+        // 5-phase execution
         let mut ctx = ExecutionContext::new(1024).expect("Failed to create context");
         let result = executor.execute(&mut ctx);
         assert!(result.is_ok());
@@ -569,7 +569,7 @@ mod tests {
 
         let mut linked = RuntimeLinker::link(&compiled);
         
-        // Add a barrier (Phase 3 integration)
+        // Add a barrier
         let barrier = MemoryBarrier::new(crate::sync::BarrierKind::FullFence, 1, 0);
         linked.add_barrier(barrier);
 
@@ -596,7 +596,7 @@ mod tests {
         assert_eq!(executor.linked().fork_id(), 1);
     }
 
-    // Phase 5C: CodeInterpreter Tests
+    // CodeInterpreter Tests
 
     #[test]
     fn test_code_interpreter_parse_read_instruction() {
@@ -764,7 +764,7 @@ mod tests {
         assert!(exec_result.is_success());
     }
 
-    // Phase 7: Direct Jump Integration Tests
+    // Direct Jump Integration Tests
 
     #[test]
     fn test_path_result_abort_flag() {
@@ -841,7 +841,7 @@ mod tests {
     }
 
     #[test]
-    fn test_phase7_abort_detection_in_result() {
+    fn test_abort_detection_in_result() {
         // Verify that CodeInterpreter properly marks abort in PathResult
         let instructions = vec![
             Instruction::ReadResource(1),
@@ -855,7 +855,7 @@ mod tests {
     }
 
     #[test]
-    fn test_phase7_abort_vs_success() {
+    fn test_abort_vs_success() {
         // Ensure abort and success are mutually exclusive
         let abort_result = PathResult::new(0, ResourceId::new(1)).abort();
         let success_result = PathResult::new(0, ResourceId::new(1)).success();

@@ -70,7 +70,7 @@ impl GlobalResource {
         })
     }
 
-    /// Acquire lock on this resource (phase 2 of 2PST)
+    /// Acquire lock on this resource (2PST)
     pub fn acquire_lock(&self) -> bool {
         let mut status = self.status.load(Ordering::Acquire);
         loop {

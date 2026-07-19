@@ -1,4 +1,4 @@
-//! Phase 4: Seam Compiler - Parsing, Analysis, and Code Generation
+//! Seam Compiler - Parsing, Analysis, and Code Generation
 //!
 //! This module implements the compiler pipeline for Seam fork expressions:
 //! 1. Parse source code syntax

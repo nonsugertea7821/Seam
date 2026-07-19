@@ -1,4 +1,4 @@
-//! Phase 9: Debugger Integration — Breakpoint framework and ghost frame inspection
+//! Debugger Integration — Breakpoint framework and ghost frame inspection
 //!
 //! Provides debugger support for abort paths by:
 //! - Enabling breakpoints at abort entry/collector entry

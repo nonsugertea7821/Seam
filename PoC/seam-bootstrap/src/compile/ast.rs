@@ -1,4 +1,4 @@
-//! Phase 4: Abstract Syntax Tree (AST) for Seam fork expressions
+//! Abstract Syntax Tree (AST) for Seam fork expressions
 //!
 //! This module defines the Abstract Syntax Tree representation for Seam fork
 //! expressions. The AST enables compiler-based effect extraction and code generation.
