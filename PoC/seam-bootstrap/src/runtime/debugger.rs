@@ -424,7 +424,7 @@ mod tests {
     fn test_debugger_enabled_breakpoint_count() {
         let mut ctx = DebuggerContext::new();
         let bp1 = ctx.set_breakpoint(BreakpointLocation::OnAbort);
-        let bp2 = ctx.set_breakpoint(BreakpointLocation::OnCollectorEntry);
+        let _bp2 = ctx.set_breakpoint(BreakpointLocation::OnCollectorEntry);
         
         assert_eq!(ctx.enabled_breakpoint_count(), 2);
         

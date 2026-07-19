@@ -204,8 +204,6 @@ impl CollectBindingTable {
                 options(noreturn)
             );
         }
-
-        Ok(())
     }
 
     /// Execute a secondary-abort jump using the collector channel identity.
@@ -323,11 +321,6 @@ pub(crate) fn with_collect_bindings<R>(f: impl FnOnce(&CollectBindingTable) -> R
         let bindings = bindings.borrow();
         f(&bindings)
     })
-}
-
-/// Get a cloned snapshot of the thread-local collect bindings.
-pub(crate) fn get_collect_bindings() -> CollectBindingTable {
-    COLLECT_BINDINGS.with(|bindings| bindings.borrow().clone())
 }
 
 /// Configure per-context direct-jump state and synchronize thread-local CFP/RFP.

@@ -13,6 +13,12 @@
 //! - SIGABRT (abnormal termination)
 //! - SIGINT (interrupt - Ctrl+C)
 
+#[inline(always)]
+fn fn_to_sighandler(f: extern "C" fn(i32)) -> libc::sighandler_t {
+    (f as *const ()) as libc::sighandler_t
+}
+
+
 /// Per-thread abort target for signal handling
 /// Stores the abort target that will be activated when a signal is received
 #[derive(Clone, Copy, Debug)]
@@ -59,7 +65,7 @@ impl SignalHandler {
         {
             // SIGTERM - graceful termination
             unsafe {
-                let result = libc::signal(libc::SIGTERM, Self::signal_handler_impl as libc::sighandler_t);
+                let result = libc::signal(libc::SIGTERM, fn_to_sighandler(Self::signal_handler_impl));
                 if result == libc::SIG_ERR as libc::sighandler_t {
                     return Err("Failed to register SIGTERM handler");
                 }
@@ -67,7 +73,7 @@ impl SignalHandler {
             
             // SIGABRT - abnormal termination
             unsafe {
-                let result = libc::signal(libc::SIGABRT, Self::signal_handler_impl as libc::sighandler_t);
+                let result = libc::signal(libc::SIGABRT, fn_to_sighandler(Self::signal_handler_impl));
                 if result == libc::SIG_ERR as libc::sighandler_t {
                     return Err("Failed to register SIGABRT handler");
                 }
@@ -75,7 +81,7 @@ impl SignalHandler {
             
             // SIGINT - interrupt (Ctrl+C)
             unsafe {
-                let result = libc::signal(libc::SIGINT, Self::signal_handler_impl as libc::sighandler_t);
+                let result = libc::signal(libc::SIGINT, fn_to_sighandler(Self::signal_handler_impl));
                 if result == libc::SIG_ERR as libc::sighandler_t {
                     return Err("Failed to register SIGINT handler");
                 }
@@ -87,11 +93,11 @@ impl SignalHandler {
             // Windows signal handling via signal() function
             // Note: Limited signal support on Windows; primarily SIGINT and SIGABRT
             unsafe {
-                let result_int = libc::signal(libc::SIGINT, Self::signal_handler_impl as libc::sighandler_t);
+                let result_int = libc::signal(libc::SIGINT, fn_to_sighandler(Self::signal_handler_impl));
                 if result_int == libc::SIG_ERR as libc::sighandler_t {
                     return Err("Failed to register SIGINT handler on Windows");
                 }
-                let result_abrt = libc::signal(libc::SIGABRT, Self::signal_handler_impl as libc::sighandler_t);
+                let result_abrt = libc::signal(libc::SIGABRT, fn_to_sighandler(Self::signal_handler_impl));
                 if result_abrt == libc::SIG_ERR as libc::sighandler_t {
                     return Err("Failed to register SIGABRT handler on Windows");
                 }
@@ -216,9 +222,9 @@ impl SignalHandler {
     }
 }
 
-/// Thread-local storage for abort targets
-/// Allows each thread to register its own abort target for signal handling
 thread_local! {
+    /// Thread-local storage for abort targets
+    /// Allows each thread to register its own abort target for signal handling
     static THREAD_LOCAL_ABORT_TARGET: std::cell::Cell<Option<SignalAbortTarget>> = 
         std::cell::Cell::new(None);
 }

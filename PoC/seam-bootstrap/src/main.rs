@@ -19,7 +19,7 @@ fn main() {
     println!("[PART 1] VM Initialization");
     println!("════════════════════════════════════════════════════════════════════");
 
-    let ctx = match vm_init(16384) {
+    match vm_init(16384) {
         Ok(context) => {
             println!("✓ Seam VM initialized");
             println!("  - Arena size: 16384 bytes");
@@ -179,7 +179,7 @@ fn main() {
     println!("\n✓ Loop iterations (arena checkpoint prevents memory leak):");
     let mut arena_ptr = base_ptr.wrapping_add(100);
 
-    for i in 0..5 {
+    for _i in 0..5 {
         let completed = loop_frame.next_iteration(&mut arena_ptr);
         println!("  - Iteration {}: arena rolled back from 0x{:x} to 0x{:x}",
             completed,

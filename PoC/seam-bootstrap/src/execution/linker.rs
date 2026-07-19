@@ -271,14 +271,6 @@ impl ExecutionState {
             path_results: Vec::new(),
         }
     }
-
-    fn all_done(&self) -> bool {
-        self.setup_done
-            && self.dispatch_done
-            && self.barriers_done
-            && self.collect_done
-            && self.join_done
-    }
 }
 
 impl ForkExecutor {
@@ -395,6 +387,7 @@ impl RuntimeLinker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ptr;
 
     #[test]
     fn test_path_result_creation() {
@@ -542,7 +535,6 @@ mod tests {
         assert!(executor.execution_state.barriers_done);
         assert!(executor.execution_state.collect_done);
         assert!(executor.execution_state.join_done);
-        assert!(executor.execution_state.all_done());
     }
 
     #[test]
@@ -791,8 +783,8 @@ mod tests {
     #[test]
     fn test_abort_target_creation() {
         let target_cfp = std::ptr::null_mut::<u8>();
-        let target_rfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x1000) };
-        let collector_ip = unsafe { std::mem::transmute::<u64, *const u8>(0x2000) };
+        let target_rfp = ptr::without_provenance_mut::<u8>(0x1000);
+        let collector_ip = ptr::without_provenance::<u8>(0x2000);
         
         let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip, 42);
         assert_eq!(abort_target.target_cfp, target_cfp);
@@ -836,9 +828,9 @@ mod tests {
     fn test_linked_fork_abort_target_storage() {
         let mut linked = LinkedFork::new(1, 2);
         
-        let target_cfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x3000) };
-        let target_rfp = unsafe { std::mem::transmute::<u64, *mut u8>(0x4000) };
-        let collector_ip = unsafe { std::mem::transmute::<u64, *const u8>(0x5000) };
+        let target_cfp = ptr::without_provenance_mut::<u8>(0x3000);
+        let target_rfp = ptr::without_provenance_mut::<u8>(0x4000);
+        let collector_ip = ptr::without_provenance::<u8>(0x5000);
         
         let abort_target = AbortTarget::new(target_cfp, target_rfp, collector_ip, 99);
         linked.set_abort_target(abort_target);

@@ -20,9 +20,7 @@ pub struct StagedWrite {
     /// Offset within resource
     offset: usize,
     /// Staged data
-    data: Vec<u8>,
-    /// Write timestamp (for ordering)
-    timestamp: u64,
+    data: Vec<u8>
 }
 
 impl StagedWrite {
@@ -30,8 +28,7 @@ impl StagedWrite {
         StagedWrite {
             resource_id,
             offset,
-            data,
-            timestamp: 0,
+            data
         }
     }
 

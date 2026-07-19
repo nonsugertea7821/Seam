@@ -10,7 +10,7 @@
 
 use crate::effect::EffectAnalysis;
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{Ordering};
 
 /// Type of memory barrier required
 #[repr(u8)]

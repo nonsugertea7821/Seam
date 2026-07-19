@@ -291,7 +291,6 @@ mod tests {
 
     #[test]
     fn test_pseudocode_generation() {
-        let compiled = CompiledFork::new(1, 2);
         let mut compiler = SeamCompiler::new();
 
         let source = r#"

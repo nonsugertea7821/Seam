@@ -150,7 +150,7 @@ pub fn get_hybrid_context() -> Option<(usize, usize)> {
 }
 
 /// Clear hybrid context (typically at channel completion)
-fn clear_hybrid_context() {
+pub fn clear_hybrid_context() {
     HYBRID_CONTEXT.with(|ctx| ctx.set(None));
 }
 
@@ -203,7 +203,7 @@ mod tests {
         {
             // x86-64 callee-saved registers:
             // rbp (CFP), r12-r15 (r15=RFP, r14=arena_ptr, r12-r13 spare)
-            let regs = PhysicalRegisters {
+            PhysicalRegisters {
                 cfp: std::ptr::null_mut(),
                 rfp: std::ptr::null_mut(),
                 arena_ptr: std::ptr::null_mut(),
