@@ -1,0 +1,1344 @@
+﻿SOURCE BUNDLE
+Generated: 07/24/2026 15:48:03
+
+========================================
+PROJECT FILE TREE
+========================================
+
+abi\error.rs
+abi\mod.rs
+abi\arch\aarch64.rs
+abi\arch\x86_64.rs
+abi\core\arena.rs
+abi\core\checkpoint.rs
+abi\core\mapping.rs
+abi\core\pointer.rs
+abi\core\transfer.rs
+abi\platform\unix.rs
+abi\platform\windows.rs
+
+========================================
+SOURCE CONTENTS
+========================================
+
+[FILE] abi\error.rs
+==================================================
+//! ABI error definitions.
+//!
+//! This module defines failures exposed by the Seam VM ABI boundary.
+//!
+//! ABI errors describe semantic failures rather than operating-system error
+//! codes. Platform implementations translate native failures into these
+//! variants before returning control to the runtime.
+
+use std::{error::Error, fmt};
+
+/// Represents an ABI operation failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AbiError {
+    /// The native system page size could not be determined.
+    InvalidPageSize,
+
+    /// The requested arena capacity exceeded representable limits.
+    CapacityOverflow,
+
+    /// The complete virtual memory mapping size exceeded representable limits.
+    MappingOverflow,
+
+    /// The operating system failed to allocate virtual memory.
+    MemoryAllocationFailed,
+
+    /// A guard page could not be configured.
+    GuardPageProtectionFailed,
+
+    /// The operating system failed to release virtual memory.
+    MemoryDeallocationFailed,
+
+    /// The original operation failed and cleanup also failed.
+    ///
+    /// The primary error represents the original failure.
+    /// The secondary error represents the failed recovery operation.
+    MultipleFailures {
+        /// Original operation failure.
+        primary: Box<AbiError>,
+
+        /// Recovery or cleanup failure.
+        secondary: Box<AbiError>,
+    },
+}
+
+impl AbiError {
+    /// Returns the original failure when multiple failures are present.
+    #[inline(always)]
+    pub fn primary(&self) -> &Self {
+        match self {
+            Self::MultipleFailures { primary, .. } => primary,
+            _ => self,
+        }
+    }
+
+    /// Returns whether this error contains multiple failures.
+    #[inline(always)]
+    pub const fn is_composite(&self) -> bool {
+        matches!(self, Self::MultipleFailures { .. })
+    }
+}
+
+impl fmt::Display for AbiError {
+    fn fmt(
+        &self,
+        formatter: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        match self {
+            Self::InvalidPageSize =>
+                write!(formatter, "invalid native page size"),
+
+            Self::CapacityOverflow =>
+                write!(formatter, "arena capacity overflow"),
+
+            Self::MappingOverflow =>
+                write!(formatter, "virtual memory mapping overflow"),
+
+            Self::MemoryAllocationFailed =>
+                write!(formatter, "virtual memory allocation failed"),
+
+            Self::GuardPageProtectionFailed =>
+                write!(formatter, "guard page protection failed"),
+
+            Self::MemoryDeallocationFailed =>
+                write!(formatter, "virtual memory deallocation failed"),
+
+            Self::MultipleFailures {
+                primary,
+                secondary,
+            } =>
+                write!(
+                    formatter,
+                    "multiple ABI failures: primary=({}), secondary=({})",
+                    primary,
+                    secondary,
+                ),
+        }
+    }
+}
+
+impl Error for AbiError {}
+
+
+[FILE] abi\mod.rs
+==================================================
+//! Seam VM ABI public contract.
+//!
+//! This module defines the ABI boundary between Seam runtime semantics and
+//! platform-specific execution primitives.
+//!
+//! The ABI layer separates:
+//!
+//! - execution allocation state,
+//! - operating-system memory ownership,
+//! - execution transfer state,
+//! - architecture-specific CPU operations.
+//!
+//! Contract summary:
+//!
+//! - `OperatorArena` represents active allocation state only.
+//! - `VirtualMapping` owns the underlying OS virtual memory resource.
+//! - `ArenaCheckpoint` stores an allocation restoration boundary.
+//! - `TransferContext` contains the minimum state required for ABI control
+//!   transfer.
+//! - `ControlOperatorPtr` and `ResourcePtr` provide semantic pointer wrappers.
+//! - `AbiError` is the only error type exposed by the ABI boundary.
+//!
+//! Allocation contract:
+//!
+//! - `alloc(capacity)` creates one initialized `OperatorArena` and one owned
+//!   `VirtualMapping`.
+//! - The returned arena is immediately usable.
+//! - The mapping owner is responsible for releasing the native memory.
+//! - Failed allocation never exposes partially initialized ABI state.
+//!
+//! Arena contract:
+//!
+//! - `OperatorArena` does not own virtual memory.
+//! - `OperatorArena` manages only allocation boundaries.
+//! - Successful allocations advance the allocation boundary monotonically.
+//! - `ArenaCheckpoint` is valid only during the lifetime of the originating
+//!   arena.
+//!
+//! Transfer contract:
+//!
+//! - `transfer(context)` binds ABI state to architecture-defined registers.
+//! - `transfer(context)` performs a direct, non-returning control transfer.
+//! - The ABI layer does not resolve execution paths.
+//! - The ABI layer does not determine collectors.
+//! - The ABI layer does not restore arena state.
+//!
+//! Ownership contract:
+//!
+//! - `VirtualMapping` owns OS memory lifetime.
+//! - `OperatorArena` owns allocation metadata only.
+//! - `ArenaCheckpoint` owns no resources.
+//! - `TransferContext` owns no resources.
+//! - Pointer wrappers own no resources.
+//!
+//! Platform contract:
+//!
+//! - Platform modules allocate and release native virtual memory.
+//! - Native failures are converted into `AbiError`.
+//! - OS-specific error codes never cross the ABI boundary.
+//!
+//! Architecture contract:
+//!
+//! - Architecture modules provide CPU primitives only.
+//! - Architecture modules do not define Seam execution semantics.
+//! - ABI semantics are defined in core modules.
+
+pub mod error;
+
+#[path = "core/arena.rs"]
+mod arena;
+
+#[path = "core/checkpoint.rs"]
+mod checkpoint;
+
+#[path = "core/mapping.rs"]
+mod mapping;
+
+#[path = "core/pointer.rs"]
+mod pointer;
+
+#[path = "core/transfer.rs"]
+mod transfer;
+
+mod arch {
+    #[cfg(target_arch = "x86_64")]
+    #[path = "arch/x86_64.rs"]
+    pub(crate) mod x86_64;
+
+    #[cfg(target_arch = "aarch64")]
+    #[path = "arch/aarch64.rs"]
+    pub(crate) mod aarch64;
+}
+
+#[cfg(unix)]
+#[path = "platform/unix.rs"]
+mod unix;
+
+#[cfg(windows)]
+#[path = "platform/windows.rs"]
+mod windows;
+
+pub use arena::OperatorArena;
+pub use checkpoint::ArenaCheckpoint;
+pub use error::AbiError;
+pub use mapping::VirtualMapping;
+pub use pointer::{ControlOperatorPtr, ResourcePtr};
+pub use transfer::{transfer, TransferContext};
+
+#[cfg(unix)]
+pub use unix::alloc;
+
+#[cfg(windows)]
+pub use windows::alloc;
+
+
+[FILE] abi\arch\aarch64.rs
+==================================================
+//! AArch64 architecture primitives for ABI state manipulation.
+//!
+//! This module provides raw CPU operations required by the ABI layer.
+//! Register semantics are defined outside this module.
+
+use core::arch::asm;
+
+/// Moves a value into x27.
+#[inline(always)]
+pub unsafe fn write_x27(value: *mut u8) {
+    asm!(
+        "mov x27, {}",
+        in(reg) value,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Moves a value into x28.
+#[inline(always)]
+pub unsafe fn write_x28(value: *mut u8) {
+    asm!(
+        "mov x28, {}",
+        in(reg) value,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Moves a value into x29.
+#[inline(always)]
+pub unsafe fn write_x29(value: *mut u8) {
+    asm!(
+        "mov x29, {}",
+        in(reg) value,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Performs an indirect control transfer.
+///
+/// The target address must be valid executable code.
+#[inline(always)]
+pub unsafe fn branch(target: *mut u8) -> ! {
+    asm!(
+        "br {}",
+        in(reg) target,
+        options(noreturn, nostack)
+    );
+}
+
+
+[FILE] abi\arch\x86_64.rs
+==================================================
+//! x86-64 architecture primitives for ABI state manipulation.
+//!
+//! This module provides raw CPU operations required by the ABI layer.
+//! It does not define the meaning of registers.
+//! Register ownership and semantics are defined by abi/core.
+
+use core::arch::asm;
+
+/// Moves a value into r14.
+///
+/// The ABI layer binds this register externally as required.
+#[inline(always)]
+pub unsafe fn write_r14(value: *mut u8) {
+    asm!(
+        "mov r14, {}",
+        in(reg) value,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Moves a value into r15.
+#[inline(always)]
+pub unsafe fn write_r15(value: *mut u8) {
+    asm!(
+        "mov r15, {}",
+        in(reg) value,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Moves a value into rbp.
+#[inline(always)]
+pub unsafe fn write_rbp(value: *mut u8) {
+    asm!(
+        "mov rbp, {}",
+        in(reg) value,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Performs an indirect control transfer.
+///
+/// The target address must be valid executable code.
+#[inline(always)]
+pub unsafe fn jump(target: *mut u8) -> ! {
+    asm!(
+        "jmp {}",
+        in(reg) target,
+        options(noreturn, nostack)
+    );
+}
+
+
+[FILE] abi\core\arena.rs
+==================================================
+//! Operator arena definition.
+//!
+//! An `OperatorArena` represents the temporary allocation state used during
+//! Seam operator execution.
+//!
+//! The arena does not own memory resources. The platform layer owns the
+//! underlying virtual memory mapping, while this type only tracks the active
+//! allocation boundary inside that region.
+//!
+//! The purpose of this arena is to provide:
+//!
+//! - constant-time sequential allocation,
+//! - constant-time allocation rollback through checkpoints,
+//! - temporary execution storage without heap lifecycle management.
+//!
+//! Invariants:
+//!
+//! - base_ptr <= bump_ptr <= limit_ptr
+//! - capacity == limit_ptr - base_ptr
+//! - successful allocations advance bump_ptr monotonically
+//! - failed allocations do not modify bump_ptr
+//! - checkpoints are valid only within the lifetime of the originating arena
+
+use crate::abi::ArenaCheckpoint;
+
+/// Contiguous bump allocation arena used by the Seam ABI.
+///
+/// `OperatorArena` represents allocation state only.
+/// It does not own the underlying virtual memory resource.
+#[repr(C, align(64))]
+#[derive(Debug)]
+pub struct OperatorArena {
+    /// First usable address.
+    pub base_ptr: *mut u8,
+
+    /// First address after the usable region.
+    pub limit_ptr: *mut u8,
+
+    /// Current allocation boundary.
+    pub bump_ptr: *mut u8,
+
+    /// Total usable capacity in bytes.
+    pub capacity: usize,
+}
+
+impl OperatorArena {
+    /// Creates an arena over an existing memory region.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee:
+    ///
+    /// - `base_ptr..limit_ptr` is a valid writable memory region.
+    /// - `capacity == limit_ptr - base_ptr`.
+    #[inline(always)]
+    pub unsafe fn new(
+        base_ptr: *mut u8,
+        limit_ptr: *mut u8,
+        capacity: usize,
+    ) -> Self {
+        debug_assert!(
+            base_ptr as usize <= limit_ptr as usize
+        );
+
+        debug_assert_eq!(
+            limit_ptr as usize - base_ptr as usize,
+            capacity
+        );
+
+        Self {
+            base_ptr,
+            limit_ptr,
+            bump_ptr: base_ptr,
+            capacity,
+        }
+    }
+
+    /// Allocates a region using bump allocation.
+    ///
+    /// Allocation is constant-time.
+    ///
+    /// Returns `None` when:
+    ///
+    /// - alignment is invalid,
+    /// - size overflows,
+    /// - remaining capacity is insufficient.
+    ///
+    /// On failure, the arena state remains unchanged.
+    ///
+    /// # Safety
+    ///
+    /// `align` must be a non-zero power of two.
+    #[inline(always)]
+    pub unsafe fn alloc(
+        &mut self,
+        size: usize,
+        align: usize,
+    ) -> Option<*mut u8> {
+        if align == 0 || !align.is_power_of_two() {
+            return None;
+        }
+
+        let current = self.bump_ptr as usize;
+
+        let aligned = current
+            .checked_add(align - 1)?
+            & !(align - 1);
+
+        let next = aligned.checked_add(size)?;
+
+        if next > self.limit_ptr as usize {
+            return None;
+        }
+
+        self.bump_ptr = next as *mut u8;
+
+        Some(aligned as *mut u8)
+    }
+
+    /// Saves the current allocation boundary.
+    ///
+    /// The checkpoint stores only the information required to restore this
+    /// allocation state.
+    #[inline(always)]
+    pub const fn checkpoint(
+        &self,
+    ) -> ArenaCheckpoint {
+        ArenaCheckpoint::new(self.bump_ptr)
+    }
+
+    /// Restores a previous allocation boundary.
+    ///
+    /// # Safety
+    ///
+    /// The checkpoint must originate from this arena lifetime.
+    #[inline(always)]
+    pub unsafe fn restore(
+        &mut self,
+        checkpoint: ArenaCheckpoint,
+    ) {
+        let ptr = checkpoint.as_ptr();
+
+        debug_assert!(
+            ptr as usize >= self.base_ptr as usize
+        );
+
+        debug_assert!(
+            ptr as usize <= self.limit_ptr as usize
+        );
+
+        self.bump_ptr = ptr;
+    }
+
+    /// Resets the arena to the initial allocation boundary.
+    #[inline(always)]
+    pub fn reset(&mut self) {
+        self.bump_ptr = self.base_ptr;
+    }
+
+    /// Returns the number of allocated bytes.
+    #[inline(always)]
+    pub fn used(
+        &self,
+    ) -> usize {
+        self.bump_ptr as usize
+            - self.base_ptr as usize
+    }
+
+    /// Returns the remaining allocation capacity.
+    #[inline(always)]
+    pub fn remaining(
+        &self,
+    ) -> usize {
+        self.limit_ptr as usize
+            - self.bump_ptr as usize
+    }
+
+    /// Returns whether the arena contains no allocations.
+    #[inline(always)]
+    pub fn is_empty(
+        &self,
+    ) -> bool {
+        self.bump_ptr == self.base_ptr
+    }
+
+    /// Returns whether the arena has no remaining capacity.
+    #[inline(always)]
+    pub fn is_full(
+        &self,
+    ) -> bool {
+        self.bump_ptr == self.limit_ptr
+    }
+
+    /// Validates the arena boundary invariant.
+    #[inline(always)]
+    pub fn validate(
+        &self,
+    ) -> bool {
+        let base = self.base_ptr as usize;
+        let current = self.bump_ptr as usize;
+        let limit = self.limit_ptr as usize;
+
+        base <= current
+            && current <= limit
+            && limit - base == self.capacity
+    }
+}
+
+
+[FILE] abi\core\checkpoint.rs
+==================================================
+//! Arena checkpoint definition.
+//!
+//! An `ArenaCheckpoint` represents a saved allocation boundary of an
+//! `OperatorArena`.
+//!
+//! A checkpoint does not own memory and does not modify arena state.
+//! It only stores the allocation position required to restore the arena
+//! execution state.
+//!
+//! The validity of a checkpoint is bound to the lifetime of the arena that
+//! created it.
+
+/// Immutable snapshot of an arena allocation boundary.
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ArenaCheckpoint {
+    /// Saved allocation boundary.
+    bump_ptr: *mut u8,
+}
+
+impl ArenaCheckpoint {
+    /// Creates a checkpoint from an allocation boundary.
+    ///
+    /// This constructor is restricted to the ABI layer.
+    ///
+    /// External users should obtain checkpoints through
+    /// `OperatorArena::checkpoint()`.
+    #[inline(always)]
+    pub(crate) const fn new(
+        bump_ptr: *mut u8,
+    ) -> Self {
+        Self {
+            bump_ptr,
+        }
+    }
+
+    /// Returns the saved allocation boundary.
+    ///
+    /// The returned pointer is only meaningful when used with the arena from
+    /// which this checkpoint was created.
+    #[inline(always)]
+    pub const fn as_ptr(
+        self,
+    ) -> *mut u8 {
+        self.bump_ptr
+    }
+}
+
+
+[FILE] abi\core\mapping.rs
+==================================================
+//! Virtual memory mapping abstraction.
+//!
+//! A `VirtualMapping` represents ownership of an operating-system virtual
+//! memory allocation.
+//!
+//! The purpose of this type is to separate:
+//!
+//! - native memory resource ownership,
+//! - execution allocation state.
+//!
+//! `VirtualMapping` owns the lifetime of the OS resource.
+//! `OperatorArena` only manages allocation boundaries inside that resource.
+//!
+//! Ownership contract:
+//!
+//! - exactly one owner exists at a time.
+//! - releasing consumes the mapping.
+//! - failed construction never exposes partial ownership.
+
+use std::ffi::c_void;
+
+use crate::abi::AbiError;
+
+/// Represents an owned operating-system virtual memory mapping.
+///
+/// This type does not manage allocation state.
+/// It only manages resource lifetime.
+#[derive(Debug)]
+pub struct VirtualMapping {
+    /// Base address returned by the platform allocator.
+    ptr: *mut c_void,
+
+    /// Total mapped size.
+    size: usize,
+
+    /// Platform-specific release operation.
+    release: unsafe fn(
+        *mut c_void,
+        usize,
+    ) -> Result<(), AbiError>,
+}
+
+impl VirtualMapping {
+    /// Creates a virtual memory mapping owner.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must represent a valid mapping created by the matching
+    /// platform allocator.
+    ///
+    /// The release function must release that mapping exactly once.
+    #[inline(always)]
+    pub(crate) unsafe fn new(
+        ptr: *mut c_void,
+        size: usize,
+        release: unsafe fn(
+            *mut c_void,
+            usize,
+        ) -> Result<(), AbiError>,
+    ) -> Self {
+        Self {
+            ptr,
+            size,
+            release,
+        }
+    }
+
+    /// Returns the mapping base address.
+    #[inline(always)]
+    pub const fn as_ptr(
+        &self,
+    ) -> *mut c_void {
+        self.ptr
+    }
+
+    /// Returns the mapping size.
+    #[inline(always)]
+    pub const fn size(
+        &self,
+    ) -> usize {
+        self.size
+    }
+
+    /// Releases the owned mapping.
+    ///
+    /// Ownership is consumed by this operation.
+    pub fn release(
+        self,
+    ) -> Result<(), AbiError> {
+        let ptr = self.ptr;
+        let size = self.size;
+        let release = self.release;
+
+        std::mem::forget(self);
+
+        unsafe {
+            release(ptr, size)
+        }
+    }
+}
+
+
+[FILE] abi\core\pointer.rs
+==================================================
+//! ABI execution context pointer definitions.
+//!
+//! This module defines the strongly typed execution pointers used by the
+//! Seam ABI.
+//!
+//! These types describe execution state only. They do not manipulate CPU
+//! registers directly. Register synchronization is delegated to the
+//! architecture layer.
+
+/// Control Operator Pointer (COP).
+///
+/// COP identifies the currently active execution context.
+///
+/// Register binding:
+/// - x86-64: rbp
+/// - AArch64: x29
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ControlOperatorPtr(*mut u8);
+
+impl ControlOperatorPtr {
+    /// Creates a null control pointer.
+    #[inline(always)]
+    pub const fn null() -> Self {
+        Self(core::ptr::null_mut())
+    }
+
+    /// Creates a control pointer from a raw address.
+    #[inline(always)]
+    pub const fn from_raw(ptr: *mut u8) -> Self {
+        Self(ptr)
+    }
+
+    /// Returns the underlying raw pointer.
+    #[inline(always)]
+    pub const fn as_raw(self) -> *mut u8 {
+        self.0
+    }
+
+    /// Returns whether this pointer is null.
+    #[inline(always)]
+    pub const fn is_null(self) -> bool {
+        self.0.is_null()
+    }
+}
+
+/// Resource Pointer (RP).
+///
+/// RP preserves the execution state of an aborted operator until the
+/// collector completes post-mortem processing.
+///
+/// Register binding:
+/// - x86-64: r15
+/// - AArch64: x28
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ResourcePtr(*mut u8);
+
+impl ResourcePtr {
+    /// Creates a null resource pointer.
+    #[inline(always)]
+    pub const fn null() -> Self {
+        Self(core::ptr::null_mut())
+    }
+
+    /// Creates a resource pointer from a raw address.
+    #[inline(always)]
+    pub const fn from_raw(ptr: *mut u8) -> Self {
+        Self(ptr)
+    }
+
+    /// Returns the underlying raw pointer.
+    #[inline(always)]
+    pub const fn as_raw(self) -> *mut u8 {
+        self.0
+    }
+
+    /// Returns whether this pointer is null.
+    #[inline(always)]
+    pub const fn is_null(self) -> bool {
+        self.0.is_null()
+    }
+}
+
+
+[FILE] abi\core\transfer.rs
+==================================================
+//! ABI control transfer.
+//!
+//! This module provides the primitive operation for moving execution between
+//! ABI entries while preserving the required ABI execution state.
+//!
+//! The ABI layer does not interpret the meaning of the destination.
+//! A destination may represent any valid ABI entry.
+//!
+//! This module is responsible only for:
+//!
+//! - binding ABI state to architecture-defined registers.
+//! - transferring control to the target entry.
+//!
+//! This module does not:
+//!
+//! - resolve execution paths.
+//! - determine collectors.
+//! - restore arena state.
+//! - manage resources.
+//! - perform runtime cleanup.
+//!
+//! Those responsibilities belong to higher layers.
+
+use crate::abi::{
+    ArenaCheckpoint,
+    ControlOperatorPtr,
+    ResourcePtr,
+};
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+compile_error!("Seam ABI transfer is only supported on x86_64 and aarch64.");
+
+/// ABI state required for a control transfer.
+///
+/// This structure represents the state contract between the runtime and an
+/// ABI entry.
+///
+/// The ABI layer does not interpret the contents of each field. It only places
+/// them into the architecture-defined locations before transferring control.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TransferContext {
+    /// Target ABI entry.
+    pub entry: ControlOperatorPtr,
+
+    /// Resource state pointer.
+    ///
+    /// Bound to the ABI resource register.
+    pub resource: ResourcePtr,
+
+    /// Saved arena allocation boundary.
+    ///
+    /// Bound to the ABI checkpoint register.
+    pub checkpoint: ArenaCheckpoint,
+}
+
+/// Transfers execution to an ABI entry.
+///
+/// This operation:
+///
+/// 1. Places ABI state into reserved registers.
+/// 2. Transfers instruction control to the target entry.
+///
+/// The operation never returns.
+///
+/// # Safety
+///
+/// The caller must guarantee that:
+///
+/// - `entry` points to valid executable code.
+/// - `resource` remains valid while required by the target entry.
+/// - `checkpoint` is valid for the current ABI execution lifetime.
+/// - The target entry satisfies the ABI calling convention.
+#[inline(always)]
+pub unsafe fn transfer(
+    context: TransferContext,
+) -> ! {
+    bind_resource(context.resource);
+    bind_checkpoint(context.checkpoint);
+    bind_entry(context.entry);
+
+    jump(context.entry);
+}
+
+/// Binds the resource pointer to the ABI register.
+///
+/// Register ownership is defined by the ABI contract.
+#[inline(always)]
+unsafe fn bind_resource(
+    resource: ResourcePtr,
+) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::abi::arch::x86_64::write_r15(
+            resource.as_raw(),
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::abi::arch::aarch64::write_x28(
+            resource.as_raw(),
+        );
+    }
+}
+
+/// Binds the checkpoint pointer to the ABI register.
+///
+/// The ABI layer only preserves the value. Restoration semantics are handled
+/// by higher-level runtime logic.
+#[inline(always)]
+unsafe fn bind_checkpoint(
+    checkpoint: ArenaCheckpoint,
+) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::abi::arch::x86_64::write_r14(
+            checkpoint.as_ptr(),
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::abi::arch::aarch64::write_x27(
+            checkpoint.as_ptr(),
+        );
+    }
+}
+
+/// Binds the target entry to the ABI control register.
+///
+/// The target is an execution entry, not a Seam-specific collector.
+#[inline(always)]
+unsafe fn bind_entry(
+    entry: ControlOperatorPtr,
+) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::abi::arch::x86_64::write_rbp(
+            entry.as_raw(),
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::abi::arch::aarch64::write_x29(
+            entry.as_raw(),
+        );
+    }
+}
+
+/// Performs the architecture-specific control transfer.
+///
+/// This operation does not preserve a return address.
+#[inline(always)]
+unsafe fn jump(
+    entry: ControlOperatorPtr,
+) -> ! {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::abi::arch::x86_64::jump(
+            entry.as_raw(),
+        );
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::abi::arch::aarch64::branch(
+            entry.as_raw(),
+        );
+    }
+}
+
+
+[FILE] abi\platform\unix.rs
+==================================================
+//! Unix platform implementation.
+//!
+//! This module provides Unix-specific virtual memory operations required by
+//! the Seam VM ABI.
+//!
+//! The platform layer converts operating-system memory primitives into the
+//! platform-independent `VirtualMapping` and `OperatorArena` abstractions.
+
+use std::{
+    ffi::c_void,
+    ptr,
+};
+
+use libc::{
+    mmap,
+    mprotect,
+    munmap,
+    sysconf,
+    MAP_ANONYMOUS,
+    MAP_FAILED,
+    MAP_PRIVATE,
+    PROT_NONE,
+    PROT_READ,
+    PROT_WRITE,
+    _SC_PAGESIZE,
+};
+
+use crate::abi::{
+    AbiError,
+    OperatorArena,
+    VirtualMapping,
+};
+
+/// Allocates a guarded arena using Unix virtual memory.
+///
+/// Memory layout:
+///
+/// +------------+----------------------+------------+
+/// | Guard Page |    Operator Arena    | Guard Page |
+/// +------------+----------------------+------------+
+pub fn alloc(
+    capacity: usize,
+) -> Result<(OperatorArena, VirtualMapping), AbiError> {
+    unsafe {
+        let page_size = page_size()?;
+
+        let capacity = align_capacity(
+            capacity,
+            page_size,
+        )?;
+
+        let total_size = capacity
+            .checked_add(page_size)
+            .and_then(|size| size.checked_add(page_size))
+            .ok_or(AbiError::MappingOverflow)?;
+
+        let ptr = mmap(
+            ptr::null_mut(),
+            total_size,
+            PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANONYMOUS,
+            -1,
+            0,
+        );
+
+        if ptr == MAP_FAILED {
+            return Err(AbiError::MemoryAllocationFailed);
+        }
+
+        let mapping = VirtualMapping::new(
+            ptr,
+            total_size,
+            release,
+        );
+
+        let base = ptr.cast::<u8>();
+        let arena_base = base.add(page_size);
+        let arena_limit = arena_base.add(capacity);
+
+        if let Err(error) = protect_guard(
+            base,
+            page_size,
+        ) {
+            return cleanup(mapping, error);
+        }
+
+        if let Err(error) = protect_guard(
+            arena_limit,
+            page_size,
+        ) {
+            return cleanup(mapping, error);
+        }
+
+        let arena = OperatorArena::new(
+            arena_base,
+            arena_limit,
+            capacity,
+        );
+
+        Ok((arena, mapping))
+    }
+}
+
+/// Returns the native Unix page size.
+fn page_size() -> Result<usize, AbiError> {
+    unsafe {
+        let size = sysconf(_SC_PAGESIZE);
+
+        if size <= 0 {
+            return Err(AbiError::InvalidPageSize);
+        }
+
+        Ok(size as usize)
+    }
+}
+
+/// Aligns capacity to the system page size.
+fn align_capacity(
+    capacity: usize,
+    page_size: usize,
+) -> Result<usize, AbiError> {
+    capacity
+        .checked_add(page_size - 1)
+        .map(|value| value & !(page_size - 1))
+        .ok_or(AbiError::CapacityOverflow)
+}
+
+/// Applies a no-access guard page.
+unsafe fn protect_guard(
+    ptr: *mut u8,
+    size: usize,
+) -> Result<(), AbiError> {
+    if mprotect(
+        ptr.cast::<c_void>(),
+        size,
+        PROT_NONE,
+    ) != 0
+    {
+        return Err(AbiError::GuardPageProtectionFailed);
+    }
+
+    Ok(())
+}
+
+/// Releases a Unix virtual memory mapping.
+unsafe fn release(
+    ptr: *mut c_void,
+    size: usize,
+) -> Result<(), AbiError> {
+    if munmap(
+        ptr,
+        size,
+    ) != 0
+    {
+        return Err(AbiError::MemoryDeallocationFailed);
+    }
+
+    Ok(())
+}
+
+/// Releases a partially initialized mapping while preserving errors.
+fn cleanup(
+    mapping: VirtualMapping,
+    error: AbiError,
+) -> Result<(OperatorArena, VirtualMapping), AbiError> {
+    match mapping.release() {
+        Ok(()) => Err(error),
+        Err(cleanup_error) => Err(AbiError::MultipleFailures {
+            primary: Box::new(error),
+            secondary: Box::new(cleanup_error),
+        }),
+    }
+}
+
+
+[FILE] abi\platform\windows.rs
+==================================================
+//! Windows platform implementation.
+//!
+//! This module provides Windows-specific virtual memory operations required
+//! by the Seam VM ABI.
+//!
+//! The platform layer is responsible only for constructing and releasing
+//! virtual memory resources. Runtime allocation behavior is implemented by
+//! `OperatorArena`.
+
+use std::{
+    ffi::c_void,
+    mem::zeroed,
+    ptr,
+};
+
+use windows_sys::Win32::{
+    System::{
+        Memory::{
+            VirtualAlloc,
+            VirtualFree,
+            VirtualProtect,
+            MEM_COMMIT,
+            MEM_RELEASE,
+            MEM_RESERVE,
+            PAGE_NOACCESS,
+            PAGE_READWRITE,
+        },
+        SystemInformation::{
+            GetSystemInfo,
+            SYSTEM_INFO,
+        },
+    },
+};
+
+use crate::abi::{
+    AbiError,
+    OperatorArena,
+    VirtualMapping,
+};
+
+/// Allocates a guarded arena.
+///
+/// Memory layout:
+///
+/// +------------+----------------------+------------+
+/// | Guard Page |    Operator Arena    | Guard Page |
+/// +------------+----------------------+------------+
+pub fn alloc(
+    capacity: usize,
+) -> Result<(OperatorArena, VirtualMapping), AbiError> {
+    unsafe {
+        let page_size = page_size()?;
+
+        let capacity = align_capacity(capacity, page_size)?;
+
+        let total_size = capacity
+            .checked_add(page_size)
+            .and_then(|size| size.checked_add(page_size))
+            .ok_or(AbiError::MappingOverflow)?;
+
+        let ptr = VirtualAlloc(
+            ptr::null_mut(),
+            total_size,
+            MEM_RESERVE | MEM_COMMIT,
+            PAGE_READWRITE,
+        );
+
+        if ptr.is_null() {
+            return Err(AbiError::MemoryAllocationFailed);
+        }
+
+        let mapping = VirtualMapping::new(
+            ptr,
+            total_size,
+            release,
+        );
+
+        let base = ptr.cast::<u8>();
+        let arena_base = base.add(page_size);
+        let arena_limit = arena_base.add(capacity);
+
+        if let Err(error) = protect_guard(
+            base,
+            page_size,
+        ) {
+            return cleanup(mapping, error);
+        }
+
+        if let Err(error) = protect_guard(
+            arena_limit,
+            page_size,
+        ) {
+            return cleanup(mapping, error);
+        }
+
+        let arena = OperatorArena::new(
+            arena_base,
+            arena_limit,
+            capacity,
+        );
+
+        Ok((arena, mapping))
+    }
+}
+
+/// Returns the native Windows page size.
+fn page_size() -> Result<usize, AbiError> {
+    unsafe {
+        let mut info: SYSTEM_INFO = zeroed();
+
+        GetSystemInfo(&mut info);
+
+        let size = info.dwPageSize as usize;
+
+        if size == 0 {
+            return Err(AbiError::InvalidPageSize);
+        }
+
+        Ok(size)
+    }
+}
+
+/// Aligns arena capacity to the native page size.
+fn align_capacity(
+    capacity: usize,
+    page_size: usize,
+) -> Result<usize, AbiError> {
+    capacity
+        .checked_add(page_size - 1)
+        .map(|value| value & !(page_size - 1))
+        .ok_or(AbiError::CapacityOverflow)
+}
+
+/// Applies a no-access guard page.
+unsafe fn protect_guard(
+    ptr: *mut u8,
+    size: usize,
+) -> Result<(), AbiError> {
+    let mut old = 0;
+
+    if VirtualProtect(
+        ptr.cast::<c_void>(),
+        size,
+        PAGE_NOACCESS,
+        &mut old,
+    ) == 0
+    {
+        return Err(AbiError::GuardPageProtectionFailed);
+    }
+
+    Ok(())
+}
+
+/// Releases a Windows virtual memory mapping.
+unsafe fn release(
+    ptr: *mut c_void,
+    _: usize,
+) -> Result<(), AbiError> {
+    if VirtualFree(
+        ptr,
+        0,
+        MEM_RELEASE,
+    ) == 0
+    {
+        return Err(AbiError::MemoryDeallocationFailed);
+    }
+
+    Ok(())
+}
+
+/// Releases a partially initialized mapping and preserves the original error.
+fn cleanup(
+    mapping: VirtualMapping,
+    error: AbiError,
+) -> Result<(OperatorArena, VirtualMapping), AbiError> {
+    match mapping.release() {
+        Ok(()) => Err(error),
+        Err(cleanup_error) => Err(AbiError::MultipleFailures {
+            primary: Box::new(error),
+            secondary: Box::new(cleanup_error),
+        }),
+    }
+}
+
+

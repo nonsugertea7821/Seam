@@ -22,9 +22,10 @@ seam-vm/
     │   └── passes/                 # Optimization pass orchestration directory (arena allocation optimization and automatic GAC insertion passes)
     ├── abi/                        # Physical ABI layer and platform memory management integration directory
     │   ├── mod.rs                  # ABI layer entry point
-    │   ├── arena/                  # Arena management subsystem (OperatorArena struct, base/limit/bump pointers, checkpoints)
+    │   ├── layout.rs               # OperatorArena struct and alloc definition
+    │   ├── checkpoint.rs           # ArenaCheckpoint struct and save/restore definitions
+    │   ├── register.rs             # Type-safe wrappers for physical register bindings (r14/x27, rbp/x29, r15/x28)
     │   ├── platform/               # Platform abstraction subsystem absorbing OS differences (mmap_unix.rs, mmap_win.rs, guard page control)
-    │   ├── register/               # Type-safe wrappers for physical register bindings (r14/x27, rbp/x29, r15/x28)
     │   └── jump/                   # Assembly interface for $O(1)$ direct jump exception handling eliminating stack unwinding
     ├── runtime/                    # Execution engine, collector, and 2PST transaction coordination integration directory
     │   ├── mod.rs                  # Runtime entry point
