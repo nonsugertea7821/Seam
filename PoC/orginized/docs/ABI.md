@@ -1,6 +1,6 @@
 # Detailed ABI Layer Functional Specification: OperatorArena, ArenaCheckpoint, OperatorPointer & ResourcePointer
 
-This specification defines in detail the system structures, low-level behaviors, physical register bindings, and interaction protocols of `OperatorArena`, `ArenaCheckpoint`, `ControlOperatorPtr` (COP), and `ResourcePtr` (RP), which form the core of the **ABI (Application Binary Interface) layer** in Seam VM.
+This specification defines in detail the system structures, low-level behaviors, physical register bindings, and interaction protocols of `OperatorArena`, `ArenaCheckpoint`, `OperatorPtr` (COP), and `ResourcePtr` (RP), which form the core of the **ABI (Application Binary Interface) layer** in Seam VM.
 
 ---
 
@@ -193,7 +193,7 @@ void execute_loop_with_gac() {
 
 ---
 
-### 2.3 Execution Control & Resource Pointers (`ControlOperatorPtr` / `ResourcePtr`)
+### 2.3 Execution Control & Resource Pointers (`OperatorPtr` / `ResourcePtr`)
 
 #### 2.3.1 Struct Definition
 
@@ -201,7 +201,7 @@ void execute_loop_with_gac() {
 /// Control Operator Pointer (COP) maintaining the active code execution context
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ControlOperatorPtr(pub *mut u8);
+pub struct OperatorPtr(pub *mut u8);
 
 /// Resource Pointer (RP) isolating memory, handles, and syscall context upon abort
 #[repr(transparent)]
@@ -295,7 +295,7 @@ jmp     *%rdx               ; 4. Jump directly to collector entry point
 
 ### 4.1 Memory Alignment and C-ABI Binding
 
-`OperatorArena`, `ControlOperatorPtr`, and `ResourcePtr` ensure full compatibility with the C ABI (`#[repr(C)]`) and SIMD/Cache line alignment (64-byte alignment).
+`OperatorArena`, `OperatorPtr`, and `ResourcePtr` ensure full compatibility with the C ABI (`#[repr(C)]`) and SIMD/Cache line alignment (64-byte alignment).
 
 ```text
 Byte Offset

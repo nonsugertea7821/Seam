@@ -1,9 +1,8 @@
 ﻿SOURCE BUNDLE
-Generated: 07/24/2026 15:48:03
+Generated: 07/24/2026 17:22:05
 
 ========================================
 PROJECT FILE TREE
-========================================
 
 abi\error.rs
 abi\mod.rs
@@ -146,7 +145,7 @@ impl Error for AbiError {}
 //! - `ArenaCheckpoint` stores an allocation restoration boundary.
 //! - `TransferContext` contains the minimum state required for ABI control
 //!   transfer.
-//! - `ControlOperatorPtr` and `ResourcePtr` provide semantic pointer wrappers.
+//! - `OperatorPtr` and `ResourcePtr` provide semantic pointer wrappers.
 //! - `AbiError` is the only error type exposed by the ABI boundary.
 //!
 //! Allocation contract:
@@ -232,7 +231,7 @@ pub use arena::OperatorArena;
 pub use checkpoint::ArenaCheckpoint;
 pub use error::AbiError;
 pub use mapping::VirtualMapping;
-pub use pointer::{ControlOperatorPtr, ResourcePtr};
+pub use pointer::{OperatorPtr, ResourcePtr};
 pub use transfer::{transfer, TransferContext};
 
 #[cfg(unix)]
@@ -726,25 +725,25 @@ impl VirtualMapping {
 //! registers directly. Register synchronization is delegated to the
 //! architecture layer.
 
-/// Control Operator Pointer (COP).
+/// Operator Pointer (COP).
 ///
-/// COP identifies the currently active execution context.
+/// OP identifies the currently active execution context.
 ///
 /// Register binding:
 /// - x86-64: rbp
 /// - AArch64: x29
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ControlOperatorPtr(*mut u8);
+pub struct OperatorPtr(*mut u8);
 
-impl ControlOperatorPtr {
-    /// Creates a null control pointer.
+impl OperatorPtr {
+    /// Creates a null operator pointer.
     #[inline(always)]
     pub const fn null() -> Self {
         Self(core::ptr::null_mut())
     }
 
-    /// Creates a control pointer from a raw address.
+    /// Creates an operator pointer from a raw address.
     #[inline(always)]
     pub const fn from_raw(ptr: *mut u8) -> Self {
         Self(ptr)
@@ -829,7 +828,7 @@ impl ResourcePtr {
 
 use crate::abi::{
     ArenaCheckpoint,
-    ControlOperatorPtr,
+    OperatorPtr,
     ResourcePtr,
 };
 
@@ -847,7 +846,7 @@ compile_error!("Seam ABI transfer is only supported on x86_64 and aarch64.");
 #[derive(Debug, Copy, Clone)]
 pub struct TransferContext {
     /// Target ABI entry.
-    pub entry: ControlOperatorPtr,
+    pub entry: OperatorPtr,
 
     /// Resource state pointer.
     ///
@@ -938,7 +937,7 @@ unsafe fn bind_checkpoint(
 /// The target is an execution entry, not a Seam-specific collector.
 #[inline(always)]
 unsafe fn bind_entry(
-    entry: ControlOperatorPtr,
+    entry: OperatorPtr,
 ) {
     #[cfg(target_arch = "x86_64")]
     {
@@ -960,7 +959,7 @@ unsafe fn bind_entry(
 /// This operation does not preserve a return address.
 #[inline(always)]
 unsafe fn jump(
-    entry: ControlOperatorPtr,
+    entry: OperatorPtr,
 ) -> ! {
     #[cfg(target_arch = "x86_64")]
     {

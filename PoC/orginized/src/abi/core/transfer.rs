@@ -23,7 +23,7 @@
 
 use crate::abi::{
     ArenaCheckpoint,
-    ControlOperatorPtr,
+    OperatorPtr,
     ResourcePtr,
 };
 
@@ -41,7 +41,7 @@ compile_error!("Seam ABI transfer is only supported on x86_64 and aarch64.");
 #[derive(Debug, Copy, Clone)]
 pub struct TransferContext {
     /// Target ABI entry.
-    pub entry: ControlOperatorPtr,
+    pub entry: OperatorPtr,
 
     /// Resource state pointer.
     ///
@@ -132,7 +132,7 @@ unsafe fn bind_checkpoint(
 /// The target is an execution entry, not a Seam-specific collector.
 #[inline(always)]
 unsafe fn bind_entry(
-    entry: ControlOperatorPtr,
+    entry: OperatorPtr,
 ) {
     #[cfg(target_arch = "x86_64")]
     {
@@ -154,7 +154,7 @@ unsafe fn bind_entry(
 /// This operation does not preserve a return address.
 #[inline(always)]
 unsafe fn jump(
-    entry: ControlOperatorPtr,
+    entry: OperatorPtr,
 ) -> ! {
     #[cfg(target_arch = "x86_64")]
     {

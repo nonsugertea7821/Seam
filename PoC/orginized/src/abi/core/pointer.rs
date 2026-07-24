@@ -7,25 +7,25 @@
 //! registers directly. Register synchronization is delegated to the
 //! architecture layer.
 
-/// Control Operator Pointer (COP).
+/// Operator Pointer (COP).
 ///
-/// COP identifies the currently active execution context.
+/// OP identifies the currently active execution context.
 ///
 /// Register binding:
 /// - x86-64: rbp
 /// - AArch64: x29
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ControlOperatorPtr(*mut u8);
+pub struct OperatorPtr(*mut u8);
 
-impl ControlOperatorPtr {
-    /// Creates a null control pointer.
+impl OperatorPtr {
+    /// Creates a null operator pointer.
     #[inline(always)]
     pub const fn null() -> Self {
         Self(core::ptr::null_mut())
     }
 
-    /// Creates a control pointer from a raw address.
+    /// Creates an operator pointer from a raw address.
     #[inline(always)]
     pub const fn from_raw(ptr: *mut u8) -> Self {
         Self(ptr)

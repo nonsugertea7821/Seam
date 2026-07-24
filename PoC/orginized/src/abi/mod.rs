@@ -17,7 +17,7 @@
 //! - `ArenaCheckpoint` stores an allocation restoration boundary.
 //! - `TransferContext` contains the minimum state required for ABI control
 //!   transfer.
-//! - `ControlOperatorPtr` and `ResourcePtr` provide semantic pointer wrappers.
+//! - `OperatorPtr` and `ResourcePtr` provide semantic pointer wrappers.
 //! - `AbiError` is the only error type exposed by the ABI boundary.
 //!
 //! Allocation contract:
@@ -103,7 +103,7 @@ pub use arena::OperatorArena;
 pub use checkpoint::ArenaCheckpoint;
 pub use error::AbiError;
 pub use mapping::VirtualMapping;
-pub use pointer::{ControlOperatorPtr, ResourcePtr};
+pub use pointer::{OperatorPtr, ResourcePtr};
 pub use transfer::{transfer, TransferContext};
 
 #[cfg(unix)]
